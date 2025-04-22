@@ -1,0 +1,25 @@
+# Test files
+__tests__
+__benchmarks__
+*.test.ts
+*.spec.ts
+
+# Development files
+.git
+.gitignore
+.npmignore
+.editorconfig
+.prettierrc
+tsconfig.json
+jest.config.js
+
+# Documentation
+*.md
+!README.md
+
+# Build files
+build
+*.log
+.DS_Store
+node_modules 
+coverage
