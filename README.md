@@ -14,6 +14,8 @@ A lightweight SQLite-based workflow tracker for Node.js applications.
 - TypeScript support
 - Bulk operations support
 - Performance optimizations
+- Centralized error handling
+- Graceful error recovery
 
 ## Installation
 
@@ -94,6 +96,22 @@ Creates a new Liteflow instance.
 ### `init()`
 
 Initializes the database schema.
+
+### Error Handling
+
+Liteflow implements a centralized error handling mechanism through the `wrap` function. This ensures that:
+
+- All database operations are wrapped in try-catch blocks
+- Errors are logged to the console
+- Operations return fallback values instead of throwing errors
+- System stability is maintained even when errors occur
+
+Fallback values for different operations:
+- `getWorkflows`: `{ workflows: [], total: 0, page: 1, pageSize: 10, totalPages: 0 }`
+- `getSteps` and `getStepsByIdentifier`: `[]`
+- `getWorkflowStats`: `{ total: 0, completed: 0, pending: 0, avgSteps: 0 }`
+- `getMostFrequentSteps` and `getAverageStepDuration`: `[]`
+- `attachIdentifier`, `deleteWorkflow`, `deleteAllWorkflows`: `false`
 
 ### `startWorkflow(name: string, identifiers: Identifier[]): string`
 
