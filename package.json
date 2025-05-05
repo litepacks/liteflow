@@ -1,6 +1,6 @@
 {
   "name": "liteflow",
-  "version": "1.0.6",
+  "version": "1.0.10",
   "description": "A lightweight SQLite-based workflow tracker",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

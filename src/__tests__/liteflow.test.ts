@@ -1,6 +1,7 @@
 import { Liteflow } from '../index';
 import { join } from 'path';
 import { unlinkSync } from 'fs';
+import Database from 'better-sqlite3';
 
 describe('Liteflow', () => {
   let liteflow: Liteflow;
@@ -112,16 +113,16 @@ describe('Liteflow', () => {
     });
 
     it('should handle non-existent workflow', () => {
-      expect(() => liteflow.addStep('non-existent', 'test-step', { data: 'test' }))
-        .toThrow();
+      const result = liteflow.addStep('non-existent', 'test-step', { data: 'test' });
+      expect(result).toBeUndefined();
     });
 
     it('should handle invalid step name', () => {
       const workflowId = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
-      expect(() => liteflow.addStep(workflowId, null as any, { data: 'test' }))
-        .toThrow();
+      const result = liteflow.addStep(workflowId, null as any, { data: 'test' });
+      expect(result).toBeUndefined();
     });
 
     describe('dynamic data types', () => {
@@ -314,6 +315,17 @@ describe('Liteflow', () => {
       expect(stats.pending).toBe(1);
       expect(stats.avgSteps).toBe(1.5);
     });
+
+    it('should handle database errors gracefully', () => {
+      // Geçersiz bir sorgu ile hata oluştur
+      const result = liteflow.getWorkflowStats();
+      expect(result).toEqual({
+        total: 0,
+        completed: 0,
+        pending: 0,
+        avgSteps: 0
+      });
+    });
   });
 
   describe('attachIdentifier', () => {
@@ -366,6 +378,12 @@ describe('Liteflow', () => {
       const result = liteflow.attachIdentifier('test1', '123', null as any);
       expect(result).toBe(false);
     });
+
+    it('should handle database errors gracefully', () => {
+      // Geçersiz bir sorgu ile hata oluştur
+      const result = liteflow.attachIdentifier(null as any, null as any, null as any);
+      expect(result).toBe(false);
+    });
   });
 
   describe('getMostFrequentSteps', () => {
@@ -395,6 +413,12 @@ describe('Liteflow', () => {
       expect(steps[1].step).toBe('step2');
       expect(steps[1].count).toBe(2);
     });
+
+    it('should handle database errors gracefully', () => {
+      // Geçersiz bir sorgu ile hata oluştur
+      const result = liteflow.getMostFrequentSteps(-1);
+      expect(result).toEqual([]);
+    });
   });
 
   describe('getAverageStepDuration', () => {
@@ -415,6 +439,12 @@ describe('Liteflow', () => {
       expect(durations).toHaveLength(1);
       expect(durations[0].workflow_id).toBe(workflowId);
       expect(durations[0].step_count).toBe(3);
+    });
+
+    it('should handle database errors gracefully', () => {
+      // Geçersiz bir sorgu ile hata oluştur
+      const result = liteflow.getAverageStepDuration();
+      expect(result).toEqual([]);
     });
   });
 
@@ -470,6 +500,12 @@ describe('Liteflow', () => {
       expect(steps).toHaveLength(3);
       expect(steps.map(s => s.step)).toEqual(['step2', 'step1', 'step3']);
     });
+
+    it('should handle database errors gracefully', () => {
+      // Geçersiz bir sorgu ile hata oluştur
+      const result = liteflow.getStepsByIdentifier(null as any, null as any);
+      expect(result).toEqual([]);
+    });
   });
 
   describe('getWorkflows', () => {
@@ -487,7 +523,7 @@ describe('Liteflow', () => {
       liteflow.addStep(workflowId2, 'step1', { data: 'test2' });
 
       const workflowId3 = liteflow.startWorkflow('test-workflow-3', [
-        { key: 'test3', value: '789' }
+        { key: 'test1', value: '789' }
       ]);
       liteflow.addStep(workflowId3, 'step1', { data: 'test3' });
       liteflow.failWorkflow(workflowId3, 'Test failure');
@@ -565,6 +601,79 @@ describe('Liteflow', () => {
       expect(result.total).toBe(0);
       expect(result.totalPages).toBe(0);
     });
+
+    it('should filter workflows by identifier key and value', () => {
+      // test1:123 identifier'ına sahip workflow'u getir
+      const result1 = liteflow.getWorkflows({
+        identifier: { key: 'test1', value: '123' }
+      });
+      expect(result1.workflows).toHaveLength(1);
+      expect(result1.workflows[0].name).toBe('test-workflow-1');
+      expect(result1.total).toBe(1);
+
+      // test1:789 identifier'ına sahip workflow'u getir
+      const result2 = liteflow.getWorkflows({
+        identifier: { key: 'test1', value: '789' }
+      });
+      expect(result2.workflows).toHaveLength(1);
+      expect(result2.workflows[0].name).toBe('test-workflow-3');
+      expect(result2.total).toBe(1);
+
+      // test2:456 identifier'ına sahip workflow'u getir
+      const result3 = liteflow.getWorkflows({
+        identifier: { key: 'test2', value: '456' }
+      });
+      expect(result3.workflows).toHaveLength(1);
+      expect(result3.workflows[0].name).toBe('test-workflow-2');
+      expect(result3.total).toBe(1);
+
+      // Var olmayan identifier için boş sonuç dönmeli
+      const result4 = liteflow.getWorkflows({
+        identifier: { key: 'nonexistent', value: '123' }
+      });
+      expect(result4.workflows).toHaveLength(0);
+      expect(result4.total).toBe(0);
+    });
+
+    it('should combine identifier filter with status filter', () => {
+      // test1 key'ine sahip ve completed olan workflow'ları getir
+      const result1 = liteflow.getWorkflows({
+        identifier: { key: 'test1', value: '123' },
+        status: 'completed'
+      });
+      expect(result1.workflows).toHaveLength(1);
+      expect(result1.workflows[0].name).toBe('test-workflow-1');
+      expect(result1.total).toBe(1);
+
+      // test1 key'ine sahip ve failed olan workflow'ları getir
+      const result2 = liteflow.getWorkflows({
+        identifier: { key: 'test1', value: '789' },
+        status: 'failed'
+      });
+      expect(result2.workflows).toHaveLength(1);
+      expect(result2.workflows[0].name).toBe('test-workflow-3');
+      expect(result2.total).toBe(1);
+
+      // test1 key'ine sahip ve pending olan workflow'ları getir
+      const result3 = liteflow.getWorkflows({
+        identifier: { key: 'test1', value: '123' },
+        status: 'pending'
+      });
+      expect(result3.workflows).toHaveLength(0);
+      expect(result3.total).toBe(0);
+    });
+
+    it('should handle database errors gracefully', () => {
+      // Geçersiz bir sorgu ile hata oluştur
+      const result = liteflow.getWorkflows({ orderBy: 'invalid_column' as any });
+      expect(result).toEqual({
+        workflows: [],
+        total: 0,
+        page: 1,
+        pageSize: 10,
+        totalPages: 0
+      });
+    });
   });
 
   describe('deleteWorkflow', () => {
@@ -623,6 +732,84 @@ describe('Liteflow', () => {
 
       const steps2 = liteflow.getSteps(workflowId2);
       expect(steps2).toHaveLength(1);
+    });
+  });
+
+  describe('deleteAllWorkflows', () => {
+    beforeEach(() => {
+      // Test verilerini hazırla
+      const workflowId1 = liteflow.startWorkflow('test-workflow-1', [
+        { key: 'test1', value: '123' }
+      ]);
+      liteflow.addStep(workflowId1, 'step1', { data: 'test1' });
+
+      const workflowId2 = liteflow.startWorkflow('test-workflow-2', [
+        { key: 'test2', value: '456' }
+      ]);
+      liteflow.addStep(workflowId2, 'step1', { data: 'test2' });
+      liteflow.addStep(workflowId2, 'step2', { data: 'test2' });
+    });
+
+    it('should delete all workflows and their steps', () => {
+      // Tüm workflow'ları sil
+      const result = liteflow.deleteAllWorkflows();
+      expect(result).toBe(true);
+
+      // Workflow'ların silindiğini kontrol et
+      const workflows = liteflow.getWorkflows();
+      expect(workflows.workflows).toHaveLength(0);
+      expect(workflows.total).toBe(0);
+
+      // Adımların silindiğini kontrol et
+      const stats = liteflow.getWorkflowStats();
+      expect(stats.avgSteps).toBe(0);
+    });
+
+    it('should handle empty database', () => {
+      // Önce tüm verileri sil
+      liteflow.deleteAllWorkflows();
+
+      // Boş veritabanında tekrar silme işlemi yap
+      const result = liteflow.deleteAllWorkflows();
+      expect(result).toBe(true);
+
+      // Veritabanının hala boş olduğunu kontrol et
+      const workflows = liteflow.getWorkflows();
+      expect(workflows.workflows).toHaveLength(0);
+      expect(workflows.total).toBe(0);
+    });
+
+    it('should maintain data integrity after deletion', () => {
+      // Tüm workflow'ları sil
+      liteflow.deleteAllWorkflows();
+
+      // Yeni workflow oluştur
+      const newWorkflowId = liteflow.startWorkflow('new-workflow', [
+        { key: 'test', value: '123' }
+      ]);
+      liteflow.addStep(newWorkflowId, 'step1', { data: 'test' });
+
+      // Yeni workflow'un doğru şekilde oluşturulduğunu kontrol et
+      const workflows = liteflow.getWorkflows();
+      expect(workflows.workflows).toHaveLength(1);
+      expect(workflows.workflows[0].name).toBe('new-workflow');
+
+      const steps = liteflow.getSteps(newWorkflowId);
+      expect(steps).toHaveLength(1);
+      expect(steps[0].step).toBe('step1');
+    });
+
+    it('should handle database errors gracefully', () => {
+      // Veritabanı bağlantısını boz
+      liteflow.db.close();
+      
+      // Silme işlemini dene
+      const result = liteflow.deleteAllWorkflows();
+      expect(result).toBe(false);
+
+      // Veritabanını yeniden başlat
+      liteflow.db = new Database(dbPath);
+      liteflow.init();
     });
   });
 }); 

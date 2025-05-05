@@ -12,6 +12,8 @@ A lightweight SQLite-based workflow tracker for Node.js applications.
 - Workflow statistics
 - SQLite-based storage
 - TypeScript support
+- Bulk operations support
+- Performance optimizations
 
 ## Installation
 
@@ -67,8 +69,20 @@ if (deleted) {
   console.log('Workflow deleted successfully');
 }
 
+// Delete all workflows
+const allDeleted = liteflow.deleteAllWorkflows();
+if (allDeleted) {
+  console.log('All workflows deleted successfully');
+}
+
 // Attach additional identifiers
 liteflow.attachIdentifier('test', '123', { key: 'test2', value: '456' });
+
+// Get most frequent steps
+const frequentSteps = liteflow.getMostFrequentSteps(5);
+
+// Get average step duration
+const stepDurations = liteflow.getAverageStepDuration();
 ```
 
 ## API Reference
@@ -111,11 +125,11 @@ Returns workflow statistics.
 
 ### `attachIdentifier(existingKey: string, existingValue: string, newIdentifier: Identifier): boolean`
 
-Attaches a new identifier to an existing workflow.
+Attaches a new identifier to an existing workflow. Returns true if successful, false if the workflow doesn't exist or if the identifier already exists.
 
 ### `getMostFrequentSteps(limit?: number): { step: string, count: number }[]`
 
-Returns the most frequent steps across all workflows.
+Returns the most frequent steps across all workflows, limited by the specified number.
 
 ### `getAverageStepDuration(): { workflow_id: string, total_duration: number, step_count: number }[]`
 
@@ -131,10 +145,15 @@ Options:
 - `pageSize?: number` - Items per page (default: 10)
 - `orderBy?: 'started_at' | 'ended_at'` - Field to sort by (default: 'started_at')
 - `order?: 'asc' | 'desc'` - Sort order (default: 'desc')
+- `identifier?: { key: string, value: string }` - Filter by identifier key and value
 
 ### `deleteWorkflow(workflowId: string): boolean`
 
 Deletes a workflow and all its steps. Returns true if the workflow was deleted successfully, false if the workflow doesn't exist or if there was an error.
+
+### `deleteAllWorkflows(): boolean`
+
+Deletes all workflows and their steps. Returns true if the operation was successful, false if there was an error.
 
 ## Types
 
@@ -174,6 +193,10 @@ interface GetWorkflowsOptions {
   pageSize?: number;
   orderBy?: 'started_at' | 'ended_at';
   order?: 'asc' | 'desc';
+  identifier?: {
+    key: string;
+    value: string;
+  };
 }
 ```
 

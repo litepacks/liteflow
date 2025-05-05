@@ -37,27 +37,38 @@ export class Liteflow {
     this.db = new Database(dbPath)
   }
 
-  init() {
-    const schema = `
-      CREATE TABLE IF NOT EXISTS workflow (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        identifiers TEXT,
-        status TEXT NOT NULL DEFAULT 'pending',
-        started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        ended_at DATETIME
-      );
+  private wrap<T>(fn: () => T, fallback?: T): T {
+    try {
+      return fn()
+    } catch (err) {
+      console.error('[Liteflow Error]', err)
+      return fallback as T
+    }
+  }
 
-      CREATE TABLE IF NOT EXISTS workflow_step (
-        id TEXT PRIMARY KEY,
-        workflow_id TEXT NOT NULL,
-        step TEXT NOT NULL,
-        data TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (workflow_id) REFERENCES workflow(id)
-      );
-    `
-    this.db.exec(schema)
+  init() {
+    return this.wrap(() => {
+      const schema = `
+        CREATE TABLE IF NOT EXISTS workflow (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          identifiers TEXT,
+          status TEXT NOT NULL DEFAULT 'pending',
+          started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          ended_at DATETIME
+        );
+
+        CREATE TABLE IF NOT EXISTS workflow_step (
+          id TEXT PRIMARY KEY,
+          workflow_id TEXT NOT NULL,
+          step TEXT NOT NULL,
+          data TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (workflow_id) REFERENCES workflow(id)
+        );
+      `
+      this.db.exec(schema)
+    })
   }
 
   onStep(handler: (step: {
@@ -94,69 +105,79 @@ export class Liteflow {
   }
 
   startWorkflow(name: string, identifiers: Identifier[]) {
-    const id = uuidv4()
-    const startedAt = new Date().toISOString()
-    const stmt = this.db.prepare(`
-      INSERT INTO workflow (id, name, identifiers, started_at)
-      VALUES (?, ?, ?, ?)
-    `)
-    stmt.run(id, name, JSON.stringify(identifiers), startedAt)
+    return this.wrap(() => {
+      const id = uuidv4()
+      const startedAt = new Date().toISOString()
+      const stmt = this.db.prepare(`
+        INSERT INTO workflow (id, name, identifiers, started_at)
+        VALUES (?, ?, ?, ?)
+      `)
+      stmt.run(id, name, JSON.stringify(identifiers), startedAt)
 
-    for (const handler of this.startHandlers) {
-      handler({ workflowId: id, name, identifiers, startedAt })
-    }
+      for (const handler of this.startHandlers) {
+        handler({ workflowId: id, name, identifiers, startedAt })
+      }
 
-    return id
+      return id
+    })
   }
 
   addStep(workflowId: string, step: string, data: any) {
-    const stmt = this.db.prepare(`
-      INSERT INTO workflow_step (id, workflow_id, step, data)
-      VALUES (?, ?, ?, ?)
-    `)
-    const createdAt = new Date().toISOString()
-    stmt.run(uuidv4(), workflowId, step, JSON.stringify(data))
+    return this.wrap(() => {
+      const stmt = this.db.prepare(`
+        INSERT INTO workflow_step (id, workflow_id, step, data)
+        VALUES (?, ?, ?, ?)
+      `)
+      const createdAt = new Date().toISOString()
+      stmt.run(uuidv4(), workflowId, step, JSON.stringify(data))
 
-    for (const handler of this.stepHandlers) {
-      handler({ workflowId, step, data, createdAt })
-    }
+      for (const handler of this.stepHandlers) {
+        handler({ workflowId, step, data, createdAt })
+      }
+    })
   }
 
   completeWorkflow(workflowId: string) {
-    const completedAt = new Date().toISOString()
-    const stmt = this.db.prepare(`
-      UPDATE workflow SET status = 'completed', ended_at = ?
-      WHERE id = ?
-    `)
-    stmt.run(completedAt, workflowId)
+    return this.wrap(() => {
+      const completedAt = new Date().toISOString()
+      const stmt = this.db.prepare(`
+        UPDATE workflow SET status = 'completed', ended_at = ?
+        WHERE id = ?
+      `)
+      stmt.run(completedAt, workflowId)
 
-    for (const handler of this.completeHandlers) {
-      handler({ workflowId, completedAt })
-    }
+      for (const handler of this.completeHandlers) {
+        handler({ workflowId, completedAt })
+      }
+    })
   }
 
   failWorkflow(workflowId: string, reason?: string) {
-    const failedAt = new Date().toISOString()
-    const stmt = this.db.prepare(`
-      UPDATE workflow SET status = 'failed', ended_at = ?
-      WHERE id = ?
-    `)
-    stmt.run(failedAt, workflowId)
+    return this.wrap(() => {
+      const failedAt = new Date().toISOString()
+      const stmt = this.db.prepare(`
+        UPDATE workflow SET status = 'failed', ended_at = ?
+        WHERE id = ?
+      `)
+      stmt.run(failedAt, workflowId)
 
-    for (const handler of this.failHandlers) {
-      handler({ workflowId, failedAt, reason })
-    }
+      for (const handler of this.failHandlers) {
+        handler({ workflowId, failedAt, reason })
+      }
+    })
   }
 
   getWorkflowByIdentifier(key: string, value: string): Workflow | undefined {
-    const stmt = this.db.prepare(`
-      SELECT * FROM workflow
-      WHERE EXISTS (
-        SELECT 1 FROM json_each(workflow.identifiers)
-        WHERE json_each.value ->> 'key' = ? AND json_each.value ->> 'value' = ?
-      )
-    `)
-    return stmt.get(key, value) as Workflow | undefined
+    return this.wrap(() => {
+      const stmt = this.db.prepare(`
+        SELECT * FROM workflow
+        WHERE EXISTS (
+          SELECT 1 FROM json_each(workflow.identifiers)
+          WHERE json_each.value ->> 'key' = ? AND json_each.value ->> 'value' = ?
+        )
+      `)
+      return stmt.get(key, value) as Workflow | undefined
+    })
   }
 
   getWorkflows(options: {
@@ -165,143 +186,165 @@ export class Liteflow {
     pageSize?: number;
     orderBy?: 'started_at' | 'ended_at';
     order?: 'asc' | 'desc';
-  } = {}): {
-    workflows: Workflow[];
-    total: number;
-    page: number;
-    pageSize: number;
-    totalPages: number;
-  } {
-    const {
-      status,
-      page = 1,
-      pageSize = 10,
-      orderBy = 'started_at',
-      order = 'desc'
-    } = options;
-
-    const offset = (page - 1) * pageSize;
-
-    // Toplam kayıt sayısını al
-    let countQuery = 'SELECT COUNT(*) as total FROM workflow';
-    const countParams: any[] = [];
-    
-    if (status) {
-      countQuery += ' WHERE status = ?';
-      countParams.push(status);
-    }
-
-    const countStmt = this.db.prepare(countQuery);
-    const { total } = countStmt.get(...countParams) as { total: number };
-
-    // İş akışlarını getir
-    let query = 'SELECT * FROM workflow';
-    const params: any[] = [];
-
-    if (status) {
-      query += ' WHERE status = ?';
-      params.push(status);
-    }
-
-    query += ` ORDER BY ${orderBy} ${order}`;
-    query += ' LIMIT ? OFFSET ?';
-    params.push(pageSize, offset);
-
-    const stmt = this.db.prepare(query);
-    const workflows = stmt.all(...params) as Workflow[];
-
-    return {
-      workflows,
-      total,
-      page,
-      pageSize,
-      totalPages: Math.ceil(total / pageSize)
+    identifier?: {
+      key: string;
+      value: string;
     };
+  } = {}) {
+    return this.wrap(() => {
+      const {
+        status,
+        page = 1,
+        pageSize = 10,
+        orderBy = 'started_at',
+        order = 'desc',
+        identifier
+      } = options;
+
+      const offset = (page - 1) * pageSize;
+
+      let countQuery = 'SELECT COUNT(*) as total FROM workflow';
+      const countParams: any[] = [];
+      
+      if (status) {
+        countQuery += ' WHERE status = ?';
+        countParams.push(status);
+      }
+
+      if (identifier) {
+        countQuery += status ? ' AND ' : ' WHERE ';
+        countQuery += 'EXISTS (SELECT 1 FROM json_each(workflow.identifiers) WHERE json_each.value ->> \'key\' = ? AND json_each.value ->> \'value\' = ?)';
+        countParams.push(identifier.key, identifier.value);
+      }
+
+      const countStmt = this.db.prepare(countQuery);
+      const { total } = countStmt.get(...countParams) as { total: number };
+
+      let query = 'SELECT * FROM workflow';
+      const params: any[] = [];
+
+      if (status) {
+        query += ' WHERE status = ?';
+        params.push(status);
+      }
+
+      if (identifier) {
+        query += status ? ' AND ' : ' WHERE ';
+        query += 'EXISTS (SELECT 1 FROM json_each(workflow.identifiers) WHERE json_each.value ->> \'key\' = ? AND json_each.value ->> \'value\' = ?)';
+        params.push(identifier.key, identifier.value);
+      }
+
+      query += ` ORDER BY ${orderBy} ${order}`;
+      query += ' LIMIT ? OFFSET ?';
+      params.push(pageSize, offset);
+
+      const stmt = this.db.prepare(query);
+      const workflows = stmt.all(...params) as Workflow[];
+
+      return {
+        workflows,
+        total,
+        page,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize)
+      };
+    }, { workflows: [], total: 0, page: 1, pageSize: 10, totalPages: 0 })
   }
 
   getSteps(workflowId: string): WorkflowStep[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM workflow_step
-      WHERE workflow_id = ?
-      ORDER BY created_at ASC
-    `)
-    return stmt.all(workflowId) as WorkflowStep[]
+    return this.wrap(() => {
+      const stmt = this.db.prepare(`
+        SELECT * FROM workflow_step
+        WHERE workflow_id = ?
+        ORDER BY created_at ASC
+      `)
+      return stmt.all(workflowId) as WorkflowStep[]
+    }, [])
   }
 
   getStepsByIdentifier(key: string, value: string): WorkflowStep[] {
-    const stmt = this.db.prepare(`
-      SELECT ws.* FROM workflow_step ws
-      INNER JOIN workflow w ON w.id = ws.workflow_id
-      WHERE EXISTS (
-        SELECT 1 FROM json_each(w.identifiers)
-        WHERE json_each.value ->> 'key' = ? AND json_each.value ->> 'value' = ?
-      )
-      ORDER BY ws.created_at ASC
-    `)
-    return stmt.all(key, value) as WorkflowStep[]
+    return this.wrap(() => {
+      const stmt = this.db.prepare(`
+        SELECT ws.* FROM workflow_step ws
+        INNER JOIN workflow w ON w.id = ws.workflow_id
+        WHERE EXISTS (
+          SELECT 1 FROM json_each(w.identifiers)
+          WHERE json_each.value ->> 'key' = ? AND json_each.value ->> 'value' = ?
+        )
+        ORDER BY ws.created_at ASC
+      `)
+      return stmt.all(key, value) as WorkflowStep[]
+    }, [])
   }
 
   attachIdentifier(existingKey: string, existingValue: string, newIdentifier: Identifier) {
-    const workflow = this.getWorkflowByIdentifier(existingKey, existingValue)
-    if (!workflow) return false
+    return this.wrap(() => {
+      const workflow = this.getWorkflowByIdentifier(existingKey, existingValue)
+      if (!workflow) return false
 
-    if (!newIdentifier || typeof newIdentifier !== 'object' || !newIdentifier.key || !newIdentifier.value) {
-      return false
-    }
+      if (!newIdentifier || typeof newIdentifier !== 'object' || !newIdentifier.key || !newIdentifier.value) {
+        return false
+      }
 
-    const currentIdentifiers = JSON.parse(workflow.identifiers || '[]')
-    const exists = currentIdentifiers.find((i: Identifier) => i.key === newIdentifier.key && i.value === newIdentifier.value)
-    if (exists) return false
+      const currentIdentifiers = JSON.parse(workflow.identifiers || '[]')
+      const exists = currentIdentifiers.find((i: Identifier) => i.key === newIdentifier.key && i.value === newIdentifier.value)
+      if (exists) return false
 
-    currentIdentifiers.push(newIdentifier)
-    const stmt = this.db.prepare(`UPDATE workflow SET identifiers = ? WHERE id = ?`)
-    stmt.run(JSON.stringify(currentIdentifiers), workflow.id)
-    return true
+      currentIdentifiers.push(newIdentifier)
+      const stmt = this.db.prepare(`UPDATE workflow SET identifiers = ? WHERE id = ?`)
+      stmt.run(JSON.stringify(currentIdentifiers), workflow.id)
+      return true
+    }, false)
   }
 
   getWorkflowStats(): WorkflowStats {
-    const stmt = this.db.prepare(`
-      SELECT 
-        COALESCE(COUNT(*), 0) as total,
-        COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) as completed,
-        COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) as pending,
-        COALESCE(ROUND(AVG(step_counts.count), 2), 0) as avgSteps
-      FROM workflow
-      LEFT JOIN (
-        SELECT workflow_id, COUNT(*) as count
-        FROM workflow_step
-        GROUP BY workflow_id
-      ) as step_counts ON workflow.id = step_counts.workflow_id
-    `)
-    return stmt.get() as WorkflowStats
+    return this.wrap(() => {
+      const stmt = this.db.prepare(`
+        SELECT 
+          COALESCE(COUNT(*), 0) as total,
+          COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) as completed,
+          COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) as pending,
+          COALESCE(ROUND(AVG(step_counts.count), 2), 0) as avgSteps
+        FROM workflow
+        LEFT JOIN (
+          SELECT workflow_id, COUNT(*) as count
+          FROM workflow_step
+          GROUP BY workflow_id
+        ) as step_counts ON workflow.id = step_counts.workflow_id
+      `)
+      return stmt.get() as WorkflowStats
+    }, { total: 0, completed: 0, pending: 0, avgSteps: 0 })
   }
 
   getMostFrequentSteps(limit: number = 5): { step: string, count: number }[] {
-    const stmt = this.db.prepare(`
-      SELECT step, COUNT(*) as count
-      FROM workflow_step
-      GROUP BY step
-      ORDER BY count DESC
-      LIMIT ?
-    `)
-    return stmt.all(limit) as { step: string, count: number }[]
+    return this.wrap(() => {
+      const stmt = this.db.prepare(`
+        SELECT step, COUNT(*) as count
+        FROM workflow_step
+        GROUP BY step
+        ORDER BY count DESC
+        LIMIT ?
+      `)
+      return stmt.all(limit) as { step: string, count: number }[]
+    }, [])
   }
 
   getAverageStepDuration(): { workflow_id: string, total_duration: number, step_count: number }[] {
-    const stmt = this.db.prepare(`
-      SELECT 
-        workflow_id,
-        MAX(created_at) - MIN(created_at) AS total_duration,
-        COUNT(*) AS step_count
-      FROM workflow_step
-      GROUP BY workflow_id
-    `)
-    return stmt.all() as { workflow_id: string, total_duration: number, step_count: number }[]
+    return this.wrap(() => {
+      const stmt = this.db.prepare(`
+        SELECT 
+          workflow_id,
+          MAX(created_at) - MIN(created_at) AS total_duration,
+          COUNT(*) AS step_count
+        FROM workflow_step
+        GROUP BY workflow_id
+      `)
+      return stmt.all() as { workflow_id: string, total_duration: number, step_count: number }[]
+    }, [])
   }
 
   deleteWorkflow(workflowId: string): boolean {
-    try {
-      // Önce workflow'u kontrol et
+    return this.wrap(() => {
       const workflowStmt = this.db.prepare('SELECT id FROM workflow WHERE id = ?')
       const workflow = workflowStmt.get(workflowId)
       
@@ -309,28 +352,37 @@ export class Liteflow {
         return false
       }
 
-      // Transaction başlat
       this.db.exec('BEGIN TRANSACTION')
 
       try {
-        // Önce adımları sil
         const deleteStepsStmt = this.db.prepare('DELETE FROM workflow_step WHERE workflow_id = ?')
         deleteStepsStmt.run(workflowId)
 
-        // Sonra workflow'u sil
         const deleteWorkflowStmt = this.db.prepare('DELETE FROM workflow WHERE id = ?')
         deleteWorkflowStmt.run(workflowId)
 
-        // Transaction'ı onayla
         this.db.exec('COMMIT')
         return true
       } catch (error) {
-        // Hata durumunda rollback yap
         this.db.exec('ROLLBACK')
         throw error
       }
-    } catch (error) {
-      return false
-    }
+    }, false)
+  }
+
+  deleteAllWorkflows(): boolean {
+    return this.wrap(() => {
+      this.db.exec('BEGIN TRANSACTION')
+
+      try {
+        this.db.exec('DELETE FROM workflow_step')
+        this.db.exec('DELETE FROM workflow')
+        this.db.exec('COMMIT')
+        return true
+      } catch (error) {
+        this.db.exec('ROLLBACK')
+        throw error
+      }
+    }, false)
   }
 }
