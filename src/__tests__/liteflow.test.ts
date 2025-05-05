@@ -317,7 +317,7 @@ describe('Liteflow', () => {
     });
 
     it('should handle database errors gracefully', () => {
-      // Geçersiz bir sorgu ile hata oluştur
+      // Create error with invalid query
       const result = liteflow.getWorkflowStats();
       expect(result).toEqual({
         total: 0,
@@ -380,7 +380,7 @@ describe('Liteflow', () => {
     });
 
     it('should handle database errors gracefully', () => {
-      // Geçersiz bir sorgu ile hata oluştur
+      // Create error with invalid query
       const result = liteflow.attachIdentifier(null as any, null as any, null as any);
       expect(result).toBe(false);
     });
@@ -415,7 +415,7 @@ describe('Liteflow', () => {
     });
 
     it('should handle database errors gracefully', () => {
-      // Geçersiz bir sorgu ile hata oluştur
+      // Create error with invalid query
       const result = liteflow.getMostFrequentSteps(-1);
       expect(result).toEqual([]);
     });
@@ -442,7 +442,7 @@ describe('Liteflow', () => {
     });
 
     it('should handle database errors gracefully', () => {
-      // Geçersiz bir sorgu ile hata oluştur
+      // Create error with invalid query
       const result = liteflow.getAverageStepDuration();
       expect(result).toEqual([]);
     });
@@ -468,14 +468,14 @@ describe('Liteflow', () => {
     });
 
     it('should return steps from multiple workflows with same identifier', () => {
-      // İlk iş akışı
+      // First workflow
       const workflowId1 = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
       liteflow.addStep(workflowId1, 'step1', { data: 'test1' });
       liteflow.addStep(workflowId1, 'step2', { data: 'test2' });
 
-      // İkinci iş akışı, aynı tanımlayıcı ile
+      // Second workflow with same identifier
       const workflowId2 = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
@@ -491,7 +491,7 @@ describe('Liteflow', () => {
         { key: 'test', value: '123' }
       ]);
       
-      // Adımları farklı zamanlarda ekle
+      // Add steps at different times
       liteflow.addStep(workflowId, 'step2', { data: 'test2' });
       liteflow.addStep(workflowId, 'step1', { data: 'test1' });
       liteflow.addStep(workflowId, 'step3', { data: 'test3' });
@@ -502,7 +502,7 @@ describe('Liteflow', () => {
     });
 
     it('should handle database errors gracefully', () => {
-      // Geçersiz bir sorgu ile hata oluştur
+      // Create error with invalid query
       const result = liteflow.getStepsByIdentifier(null as any, null as any);
       expect(result).toEqual([]);
     });
@@ -510,7 +510,7 @@ describe('Liteflow', () => {
 
   describe('getWorkflows', () => {
     beforeEach(() => {
-      // Test verilerini hazırla
+      // Prepare test data
       const workflowId1 = liteflow.startWorkflow('test-workflow-1', [
         { key: 'test1', value: '123' }
       ]);
@@ -556,7 +556,7 @@ describe('Liteflow', () => {
     });
 
     it('should support pagination', () => {
-      // Daha fazla test verisi ekle
+      // Add more test data
       for (let i = 4; i <= 15; i++) {
         const workflowId = liteflow.startWorkflow(`test-workflow-${i}`, [
           { key: 'test', value: i.toString() }
@@ -587,7 +587,7 @@ describe('Liteflow', () => {
     });
 
     it('should handle empty database', () => {
-      // Mevcut veritabanını temizle
+      // Clear existing database
       try {
         unlinkSync(dbPath);
       } catch (error) {
@@ -603,7 +603,7 @@ describe('Liteflow', () => {
     });
 
     it('should filter workflows by identifier key and value', () => {
-      // test1:123 identifier'ına sahip workflow'u getir
+      // Get workflow with test1:123 identifier
       const result1 = liteflow.getWorkflows({
         identifier: { key: 'test1', value: '123' }
       });
@@ -611,7 +611,7 @@ describe('Liteflow', () => {
       expect(result1.workflows[0].name).toBe('test-workflow-1');
       expect(result1.total).toBe(1);
 
-      // test1:789 identifier'ına sahip workflow'u getir
+      // Get workflow with test1:789 identifier
       const result2 = liteflow.getWorkflows({
         identifier: { key: 'test1', value: '789' }
       });
@@ -619,7 +619,7 @@ describe('Liteflow', () => {
       expect(result2.workflows[0].name).toBe('test-workflow-3');
       expect(result2.total).toBe(1);
 
-      // test2:456 identifier'ına sahip workflow'u getir
+      // Get workflow with test2:456 identifier
       const result3 = liteflow.getWorkflows({
         identifier: { key: 'test2', value: '456' }
       });
@@ -627,7 +627,7 @@ describe('Liteflow', () => {
       expect(result3.workflows[0].name).toBe('test-workflow-2');
       expect(result3.total).toBe(1);
 
-      // Var olmayan identifier için boş sonuç dönmeli
+      // Should return empty result for non-existent identifier
       const result4 = liteflow.getWorkflows({
         identifier: { key: 'nonexistent', value: '123' }
       });
@@ -636,7 +636,7 @@ describe('Liteflow', () => {
     });
 
     it('should combine identifier filter with status filter', () => {
-      // test1 key'ine sahip ve completed olan workflow'ları getir
+      // Get workflows with test1 key and completed status
       const result1 = liteflow.getWorkflows({
         identifier: { key: 'test1', value: '123' },
         status: 'completed'
@@ -645,7 +645,7 @@ describe('Liteflow', () => {
       expect(result1.workflows[0].name).toBe('test-workflow-1');
       expect(result1.total).toBe(1);
 
-      // test1 key'ine sahip ve failed olan workflow'ları getir
+      // Get workflows with test1 key and failed status
       const result2 = liteflow.getWorkflows({
         identifier: { key: 'test1', value: '789' },
         status: 'failed'
@@ -654,7 +654,7 @@ describe('Liteflow', () => {
       expect(result2.workflows[0].name).toBe('test-workflow-3');
       expect(result2.total).toBe(1);
 
-      // test1 key'ine sahip ve pending olan workflow'ları getir
+      // Get workflows with test1 key and pending status
       const result3 = liteflow.getWorkflows({
         identifier: { key: 'test1', value: '123' },
         status: 'pending'
@@ -664,7 +664,7 @@ describe('Liteflow', () => {
     });
 
     it('should handle database errors gracefully', () => {
-      // Geçersiz bir sorgu ile hata oluştur
+      // Create error with invalid query
       const result = liteflow.getWorkflows({ orderBy: 'invalid_column' as any });
       expect(result).toEqual({
         workflows: [],
@@ -678,22 +678,22 @@ describe('Liteflow', () => {
 
   describe('deleteWorkflow', () => {
     it('should delete a workflow and its steps', () => {
-      // Test workflow oluştur
+      // Create test workflow
       const workflowId = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
       liteflow.addStep(workflowId, 'step1', { data: 'test1' });
       liteflow.addStep(workflowId, 'step2', { data: 'test2' });
 
-      // Workflow'u sil
+      // Delete workflow
       const result = liteflow.deleteWorkflow(workflowId);
       expect(result).toBe(true);
 
-      // Workflow'un silindiğini kontrol et
+      // Check if workflow is deleted
       const workflow = liteflow.getWorkflowByIdentifier('test', '123');
       expect(workflow).toBeUndefined();
 
-      // Adımların silindiğini kontrol et
+      // Check if steps are deleted
       const steps = liteflow.getSteps(workflowId);
       expect(steps).toHaveLength(0);
     });
@@ -704,13 +704,13 @@ describe('Liteflow', () => {
     });
 
     it('should handle database errors gracefully', () => {
-      // Geçersiz bir workflow ID'si ile silme işlemi yap
+      // Try to delete with invalid workflow ID
       const result = liteflow.deleteWorkflow(null as any);
       expect(result).toBe(false);
     });
 
     it('should maintain data integrity after deletion', () => {
-      // İki workflow oluştur
+      // Create two workflows
       const workflowId1 = liteflow.startWorkflow('workflow-1', [
         { key: 'test1', value: '123' }
       ]);
@@ -718,14 +718,14 @@ describe('Liteflow', () => {
         { key: 'test2', value: '456' }
       ]);
 
-      // Her iki workflow'a adım ekle
+      // Add steps to both workflows
       liteflow.addStep(workflowId1, 'step1', { data: 'test1' });
       liteflow.addStep(workflowId2, 'step1', { data: 'test2' });
 
-      // İlk workflow'u sil
+      // Delete first workflow
       liteflow.deleteWorkflow(workflowId1);
 
-      // İkinci workflow'un ve adımlarının hala var olduğunu kontrol et
+      // Check if second workflow and its steps still exist
       const workflow2 = liteflow.getWorkflowByIdentifier('test2', '456');
       expect(workflow2).toBeDefined();
       expect(workflow2?.id).toBe(workflowId2);
@@ -737,7 +737,7 @@ describe('Liteflow', () => {
 
   describe('deleteAllWorkflows', () => {
     beforeEach(() => {
-      // Test verilerini hazırla
+      // Prepare test data
       const workflowId1 = liteflow.startWorkflow('test-workflow-1', [
         { key: 'test1', value: '123' }
       ]);
@@ -751,45 +751,45 @@ describe('Liteflow', () => {
     });
 
     it('should delete all workflows and their steps', () => {
-      // Tüm workflow'ları sil
+      // Delete all workflows
       const result = liteflow.deleteAllWorkflows();
       expect(result).toBe(true);
 
-      // Workflow'ların silindiğini kontrol et
+      // Check if workflows are deleted
       const workflows = liteflow.getWorkflows();
       expect(workflows.workflows).toHaveLength(0);
       expect(workflows.total).toBe(0);
 
-      // Adımların silindiğini kontrol et
+      // Check if steps are deleted
       const stats = liteflow.getWorkflowStats();
       expect(stats.avgSteps).toBe(0);
     });
 
     it('should handle empty database', () => {
-      // Önce tüm verileri sil
+      // First delete all data
       liteflow.deleteAllWorkflows();
 
-      // Boş veritabanında tekrar silme işlemi yap
+      // Try to delete again on empty database
       const result = liteflow.deleteAllWorkflows();
       expect(result).toBe(true);
 
-      // Veritabanının hala boş olduğunu kontrol et
+      // Check if database is still empty
       const workflows = liteflow.getWorkflows();
       expect(workflows.workflows).toHaveLength(0);
       expect(workflows.total).toBe(0);
     });
 
     it('should maintain data integrity after deletion', () => {
-      // Tüm workflow'ları sil
+      // Delete all workflows
       liteflow.deleteAllWorkflows();
 
-      // Yeni workflow oluştur
+      // Create new workflow
       const newWorkflowId = liteflow.startWorkflow('new-workflow', [
         { key: 'test', value: '123' }
       ]);
       liteflow.addStep(newWorkflowId, 'step1', { data: 'test' });
 
-      // Yeni workflow'un doğru şekilde oluşturulduğunu kontrol et
+      // Check if new workflow is created correctly
       const workflows = liteflow.getWorkflows();
       expect(workflows.workflows).toHaveLength(1);
       expect(workflows.workflows[0].name).toBe('new-workflow');
@@ -800,14 +800,14 @@ describe('Liteflow', () => {
     });
 
     it('should handle database errors gracefully', () => {
-      // Veritabanı bağlantısını boz
+      // Break database connection
       liteflow.db.close();
       
-      // Silme işlemini dene
+      // Try to delete
       const result = liteflow.deleteAllWorkflows();
       expect(result).toBe(false);
 
-      // Veritabanını yeniden başlat
+      // Restart database
       liteflow.db = new Database(dbPath);
       liteflow.init();
     });
