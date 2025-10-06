@@ -238,12 +238,12 @@ describe('Liteflow', () => {
 
   describe('getWorkflowByIdentifier', () => {
     it('should find a workflow by identifier', () => {
-      const workflowId = liteflow.startWorkflow('test-workflow', [
+      const workflow = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
-      const workflow = liteflow.getWorkflowByIdentifier('test', '123');
-      expect(workflow).toBeDefined();
-      expect(workflow?.id).toBe(workflowId);
+      const result = liteflow.getWorkflowByIdentifier('test', '123');
+      expect(result).toBeDefined();
+      expect(result?.id).toBe(workflow.id);
     });
 
     it('should return undefined for non-existent identifier', () => {
@@ -330,13 +330,13 @@ describe('Liteflow', () => {
 
   describe('attachIdentifier', () => {
     it('should attach a new identifier to an existing workflow', () => {
-      const workflowId = liteflow.startWorkflow('test-workflow', [
+      const workflow = liteflow.startWorkflow('test-workflow', [
         { key: 'test1', value: '123' }
       ]);
       const result = liteflow.attachIdentifier('test1', '123', { key: 'test2', value: '456' });
       expect(result).toBe(true);
-      const workflow = liteflow.getWorkflowByIdentifier('test2', '456');
-      expect(workflow?.id).toBe(workflowId);
+      const foundWorkflow = liteflow.getWorkflowByIdentifier('test2', '456');
+      expect(foundWorkflow?.id).toBe(workflow.id);
     });
 
     it('should not attach duplicate identifier', () => {
@@ -428,16 +428,16 @@ describe('Liteflow', () => {
     });
 
     it('should calculate average step duration', () => {
-      const workflowId = liteflow.startWorkflow('test-workflow', [
+      const workflow = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
-      liteflow.addStep(workflowId, 'step1', { data: 'test1' });
-      liteflow.addStep(workflowId, 'step2', { data: 'test2' });
-      liteflow.addStep(workflowId, 'step3', { data: 'test3' });
+      liteflow.addStep(workflow, 'step1', { data: 'test1' });
+      liteflow.addStep(workflow, 'step2', { data: 'test2' });
+      liteflow.addStep(workflow, 'step3', { data: 'test3' });
 
       const durations = liteflow.getAverageStepDuration();
       expect(durations).toHaveLength(1);
-      expect(durations[0].workflow_id).toBe(workflowId);
+      expect(durations[0].workflow_id).toBe(workflow.id);
       expect(durations[0].step_count).toBe(3);
     });
 
@@ -711,26 +711,26 @@ describe('Liteflow', () => {
 
     it('should maintain data integrity after deletion', () => {
       // Create two workflows
-      const workflowId1 = liteflow.startWorkflow('workflow-1', [
+      const workflow1 = liteflow.startWorkflow('workflow-1', [
         { key: 'test1', value: '123' }
       ]);
-      const workflowId2 = liteflow.startWorkflow('workflow-2', [
+      const workflow2 = liteflow.startWorkflow('workflow-2', [
         { key: 'test2', value: '456' }
       ]);
 
       // Add steps to both workflows
-      liteflow.addStep(workflowId1, 'step1', { data: 'test1' });
-      liteflow.addStep(workflowId2, 'step1', { data: 'test2' });
+      liteflow.addStep(workflow1, 'step1', { data: 'test1' });
+      liteflow.addStep(workflow2, 'step1', { data: 'test2' });
 
       // Delete first workflow
-      liteflow.deleteWorkflow(workflowId1);
+      liteflow.deleteWorkflow(workflow1);
 
       // Check if second workflow and its steps still exist
-      const workflow2 = liteflow.getWorkflowByIdentifier('test2', '456');
-      expect(workflow2).toBeDefined();
-      expect(workflow2?.id).toBe(workflowId2);
+      const foundWorkflow2 = liteflow.getWorkflowByIdentifier('test2', '456');
+      expect(foundWorkflow2).toBeDefined();
+      expect(foundWorkflow2?.id).toBe(workflow2.id);
 
-      const steps2 = liteflow.getSteps(workflowId2);
+      const steps2 = liteflow.getSteps(workflow2);
       expect(steps2).toHaveLength(1);
     });
   });
@@ -810,6 +810,110 @@ describe('Liteflow', () => {
       // Restart database
       liteflow.db = new Database(dbPath);
       liteflow.init();
+    });
+  });
+
+  describe('WorkflowInstance API', () => {
+    it('should allow adding steps via workflow instance', () => {
+      const workflow = liteflow.startWorkflow('test-workflow', [
+        { key: 'test', value: '123' }
+      ]);
+      
+      // Use instance method
+      workflow.addStep('step1', { data: 'test1' });
+      workflow.addStep('step2', { data: 'test2' });
+      
+      const steps = workflow.getSteps();
+      expect(steps).toHaveLength(2);
+      expect(steps[0].step).toBe('step1');
+      expect(steps[1].step).toBe('step2');
+    });
+
+    it('should allow completing workflow via instance', () => {
+      const workflow = liteflow.startWorkflow('test-workflow', [
+        { key: 'test', value: '123' }
+      ]);
+      
+      workflow.complete();
+      
+      const result = liteflow.getWorkflowByIdentifier('test', '123');
+      expect(result?.status).toBe('completed');
+    });
+
+    it('should allow failing workflow via instance', () => {
+      const workflow = liteflow.startWorkflow('test-workflow', [
+        { key: 'test', value: '123' }
+      ]);
+      
+      workflow.fail('Test failure reason');
+      
+      const result = liteflow.getWorkflowByIdentifier('test', '123');
+      expect(result?.status).toBe('failed');
+    });
+
+    it('should allow deleting workflow via instance', () => {
+      const workflow = liteflow.startWorkflow('test-workflow', [
+        { key: 'test', value: '123' }
+      ]);
+      workflow.addStep('step1', { data: 'test1' });
+      
+      const deleted = workflow.delete();
+      expect(deleted).toBe(true);
+      
+      const result = liteflow.getWorkflowByIdentifier('test', '123');
+      expect(result).toBeUndefined();
+    });
+
+    it('should provide workflow ID via .id property', () => {
+      const workflow = liteflow.startWorkflow('test-workflow', [
+        { key: 'test', value: '123' }
+      ]);
+      
+      expect(workflow.id).toBeDefined();
+      expect(typeof workflow.id).toBe('string');
+    });
+
+    it('should convert to string representation', () => {
+      const workflow = liteflow.startWorkflow('test-workflow', [
+        { key: 'test', value: '123' }
+      ]);
+      
+      const str = workflow.toString();
+      expect(str).toBe(workflow.id);
+      expect(typeof str).toBe('string');
+    });
+
+    it('should work with both old and new API styles', () => {
+      const workflow = liteflow.startWorkflow('test-workflow', [
+        { key: 'test', value: '123' }
+      ]);
+      
+      // Old style - using liteflow methods with workflow instance
+      liteflow.addStep(workflow, 'step1', { data: 'test1' });
+      
+      // New style - using workflow instance methods
+      workflow.addStep('step2', { data: 'test2' });
+      
+      const steps = liteflow.getSteps(workflow);
+      expect(steps).toHaveLength(2);
+      expect(steps[0].step).toBe('step1');
+      expect(steps[1].step).toBe('step2');
+    });
+
+    it('should chain operations on workflow instance', () => {
+      const workflow = liteflow.startWorkflow('test-workflow', [
+        { key: 'test', value: '123' }
+      ]);
+      
+      workflow.addStep('step1', { data: 'test1' });
+      workflow.addStep('step2', { data: 'test2' });
+      workflow.complete();
+      
+      const result = liteflow.getWorkflowByIdentifier('test', '123');
+      expect(result?.status).toBe('completed');
+      
+      const steps = workflow.getSteps();
+      expect(steps).toHaveLength(2);
     });
   });
 }); 

@@ -3,6 +3,80 @@ import { v4 as uuidv4 } from 'uuid'
 import { Workflow, WorkflowStep, WorkflowStats, Identifier } from './types'
 
 /**
+ * WorkflowInstance: A wrapper around a workflow ID that provides instance methods
+ */
+export class WorkflowInstance {
+  constructor(
+    private workflowId: string,
+    private liteflow: Liteflow
+  ) {}
+
+  /**
+   * Get the workflow ID
+   */
+  get id(): string {
+    return this.workflowId
+  }
+
+  /**
+   * Add a step to this workflow
+   */
+  addStep(step: string, data: any) {
+    return this.liteflow.addStep(this.workflowId, step, data)
+  }
+
+  /**
+   * Mark this workflow as completed
+   */
+  complete() {
+    return this.liteflow.completeWorkflow(this.workflowId)
+  }
+
+  /**
+   * Mark this workflow as failed
+   */
+  fail(reason?: string) {
+    return this.liteflow.failWorkflow(this.workflowId, reason)
+  }
+
+  /**
+   * Get all steps for this workflow
+   */
+  getSteps(): WorkflowStep[] {
+    return this.liteflow.getSteps(this.workflowId)
+  }
+
+  /**
+   * Delete this workflow
+   */
+  delete(): boolean {
+    return this.liteflow.deleteWorkflow(this.workflowId)
+  }
+
+  /**
+   * Convert to string (returns workflow ID)
+   * This enables backward compatibility when used as a string
+   */
+  toString(): string {
+    return this.workflowId
+  }
+
+  /**
+   * Return the workflow ID when converted to JSON
+   */
+  toJSON(): string {
+    return this.workflowId
+  }
+
+  /**
+   * Return the workflow ID when used as a primitive
+   */
+  valueOf(): string {
+    return this.workflowId
+  }
+}
+
+/**
  * Liteflow: A lightweight SQLite-based workflow tracker
  */
 export class Liteflow {
@@ -104,7 +178,7 @@ export class Liteflow {
     this.failHandlers.push(handler)
   }
 
-  startWorkflow(name: string, identifiers: Identifier[]) {
+  startWorkflow(name: string, identifiers: Identifier[]): WorkflowInstance {
     return this.wrap(() => {
       const id = uuidv4()
       const startedAt = new Date().toISOString()
@@ -118,51 +192,54 @@ export class Liteflow {
         handler({ workflowId: id, name, identifiers, startedAt })
       }
 
-      return id
-    })
+      return new WorkflowInstance(id, this)
+    }) as WorkflowInstance
   }
 
-  addStep(workflowId: string, step: string, data: any) {
+  addStep(workflowId: string | WorkflowInstance, step: string, data: any) {
     return this.wrap(() => {
+      const id = typeof workflowId === 'string' ? workflowId : workflowId.id
       const stmt = this.db.prepare(`
         INSERT INTO workflow_step (id, workflow_id, step, data)
         VALUES (?, ?, ?, ?)
       `)
       const createdAt = new Date().toISOString()
-      stmt.run(uuidv4(), workflowId, step, JSON.stringify(data))
+      stmt.run(uuidv4(), id, step, JSON.stringify(data))
 
       for (const handler of this.stepHandlers) {
-        handler({ workflowId, step, data, createdAt })
+        handler({ workflowId: id, step, data, createdAt })
       }
     })
   }
 
-  completeWorkflow(workflowId: string) {
+  completeWorkflow(workflowId: string | WorkflowInstance) {
     return this.wrap(() => {
+      const id = typeof workflowId === 'string' ? workflowId : workflowId.id
       const completedAt = new Date().toISOString()
       const stmt = this.db.prepare(`
         UPDATE workflow SET status = 'completed', ended_at = ?
         WHERE id = ?
       `)
-      stmt.run(completedAt, workflowId)
+      stmt.run(completedAt, id)
 
       for (const handler of this.completeHandlers) {
-        handler({ workflowId, completedAt })
+        handler({ workflowId: id, completedAt })
       }
     })
   }
 
-  failWorkflow(workflowId: string, reason?: string) {
+  failWorkflow(workflowId: string | WorkflowInstance, reason?: string) {
     return this.wrap(() => {
+      const id = typeof workflowId === 'string' ? workflowId : workflowId.id
       const failedAt = new Date().toISOString()
       const stmt = this.db.prepare(`
         UPDATE workflow SET status = 'failed', ended_at = ?
         WHERE id = ?
       `)
-      stmt.run(failedAt, workflowId)
+      stmt.run(failedAt, id)
 
       for (const handler of this.failHandlers) {
-        handler({ workflowId, failedAt, reason })
+        handler({ workflowId: id, failedAt, reason })
       }
     })
   }
@@ -251,14 +328,15 @@ export class Liteflow {
     }, { workflows: [], total: 0, page: 1, pageSize: 10, totalPages: 0 })
   }
 
-  getSteps(workflowId: string): WorkflowStep[] {
+  getSteps(workflowId: string | WorkflowInstance): WorkflowStep[] {
     return this.wrap(() => {
+      const id = typeof workflowId === 'string' ? workflowId : workflowId.id
       const stmt = this.db.prepare(`
         SELECT * FROM workflow_step
         WHERE workflow_id = ?
         ORDER BY created_at ASC
       `)
-      return stmt.all(workflowId) as WorkflowStep[]
+      return stmt.all(id) as WorkflowStep[]
     }, [])
   }
 
@@ -343,10 +421,11 @@ export class Liteflow {
     }, [])
   }
 
-  deleteWorkflow(workflowId: string): boolean {
+  deleteWorkflow(workflowId: string | WorkflowInstance): boolean {
     return this.wrap(() => {
+      const id = typeof workflowId === 'string' ? workflowId : workflowId.id
       const workflowStmt = this.db.prepare('SELECT id FROM workflow WHERE id = ?')
-      const workflow = workflowStmt.get(workflowId)
+      const workflow = workflowStmt.get(id)
       
       if (!workflow) {
         return false
@@ -356,10 +435,10 @@ export class Liteflow {
 
       try {
         const deleteStepsStmt = this.db.prepare('DELETE FROM workflow_step WHERE workflow_id = ?')
-        deleteStepsStmt.run(workflowId)
+        deleteStepsStmt.run(id)
 
         const deleteWorkflowStmt = this.db.prepare('DELETE FROM workflow WHERE id = ?')
-        deleteWorkflowStmt.run(workflowId)
+        deleteWorkflowStmt.run(id)
 
         this.db.exec('COMMIT')
         return true

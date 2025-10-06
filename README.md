@@ -32,23 +32,29 @@ import { Liteflow } from 'liteflow';
 const liteflow = new Liteflow('path/to/database.db');
 liteflow.init();
 
-// Start a new workflow
-const workflowId = liteflow.startWorkflow('test-workflow', [
+// Start a new workflow - returns a WorkflowInstance
+const workflow = liteflow.startWorkflow('test-workflow', [
   { key: 'test', value: '123' }
 ]);
 
-// Add steps to the workflow
+// NEW: Use the workflow instance methods directly
+workflow.addStep('step1', { data: 'test1' });
+workflow.addStep('step2', { data: 'test2' });
+workflow.complete();
+
+// Or use the traditional API (still supported)
+const workflowId = workflow.id; // Get the workflow ID
 liteflow.addStep(workflowId, 'step1', { data: 'test1' });
 liteflow.addStep(workflowId, 'step2', { data: 'test2' });
-
-// Complete the workflow
 liteflow.completeWorkflow(workflowId);
 
 // Get workflow by identifier
-const workflow = liteflow.getWorkflowByIdentifier('test', '123');
+const foundWorkflow = liteflow.getWorkflowByIdentifier('test', '123');
 
 // Get workflow steps
-const steps = liteflow.getSteps(workflowId);
+const steps = workflow.getSteps(); // Using instance method
+// or
+const stepsById = liteflow.getSteps(workflowId); // Using traditional method
 
 // Get steps by identifier
 const stepsByIdentifier = liteflow.getStepsByIdentifier('test', '123');
@@ -66,7 +72,9 @@ const workflows = liteflow.getWorkflows({
 });
 
 // Delete a workflow
-const deleted = liteflow.deleteWorkflow(workflowId);
+const deleted = workflow.delete(); // Using instance method
+// or
+const deletedById = liteflow.deleteWorkflow(workflowId); // Using traditional method
 if (deleted) {
   console.log('Workflow deleted successfully');
 }
@@ -113,17 +121,28 @@ Fallback values for different operations:
 - `getMostFrequentSteps` and `getAverageStepDuration`: `[]`
 - `attachIdentifier`, `deleteWorkflow`, `deleteAllWorkflows`: `false`
 
-### `startWorkflow(name: string, identifiers: Identifier[]): string`
+### `startWorkflow(name: string, identifiers: Identifier[]): WorkflowInstance`
 
-Starts a new workflow and returns its ID.
+Starts a new workflow and returns a WorkflowInstance object that provides convenient instance methods.
 
-### `addStep(workflowId: string, step: string, data: any): void`
+### WorkflowInstance Methods
 
-Adds a step to a workflow.
+The `WorkflowInstance` returned by `startWorkflow` provides the following methods:
 
-### `completeWorkflow(workflowId: string): void`
+- `workflow.id`: Get the workflow ID (string)
+- `workflow.addStep(step: string, data: any)`: Add a step to this workflow
+- `workflow.complete()`: Mark this workflow as completed
+- `workflow.fail(reason?: string)`: Mark this workflow as failed
+- `workflow.getSteps()`: Get all steps for this workflow
+- `workflow.delete()`: Delete this workflow
 
-Marks a workflow as completed.
+### `addStep(workflowId: string | WorkflowInstance, step: string, data: any): void`
+
+Adds a step to a workflow. Accepts either a workflow ID string or a WorkflowInstance.
+
+### `completeWorkflow(workflowId: string | WorkflowInstance): void`
+
+Marks a workflow as completed. Accepts either a workflow ID string or a WorkflowInstance.
 
 ### `getWorkflowByIdentifier(key: string, value: string): Workflow | undefined`
 
