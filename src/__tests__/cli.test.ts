@@ -5,6 +5,7 @@ import { execSync } from 'child_process'
 
 describe('CLI', () => {
   const testDbPath = path.join(__dirname, 'cli-test.db')
+  const cliPath = 'node dist/cli.js'
   
   beforeEach(() => {
     // Clean up any existing test database
@@ -37,13 +38,13 @@ describe('CLI', () => {
   })
 
   it('should display help information', () => {
-    const output = execSync('node dist/cli.js --help').toString()
+    const output = execSync(`${cliPath} --help`).toString()
     expect(output).toContain('CLI tool for tracking workflow statistics')
     expect(output).toContain('stats')
   })
 
   it('should display stats command help', () => {
-    const output = execSync('node dist/cli.js stats --help').toString()
+    const output = execSync(`${cliPath} stats --help`).toString()
     expect(output).toContain('Display general workflow statistics')
     expect(output).toContain('--db')
     expect(output).toContain('--watch')
@@ -51,7 +52,7 @@ describe('CLI', () => {
   })
 
   it('should display basic statistics', () => {
-    const output = execSync(`node dist/cli.js stats --db ${testDbPath}`).toString()
+    const output = execSync(`${cliPath} stats --db ${testDbPath}`).toString()
     expect(output).toContain('Liteflow Statistics Dashboard')
     expect(output).toContain('Total Workflows')
     expect(output).toContain('Completed')
@@ -59,27 +60,27 @@ describe('CLI', () => {
   })
 
   it('should filter by status', () => {
-    const output = execSync(`node dist/cli.js stats --db ${testDbPath} --status pending`).toString()
+    const output = execSync(`${cliPath} stats --db ${testDbPath} --status pending`).toString()
     expect(output).toContain('Liteflow Statistics Dashboard')
     expect(output).toContain('Workflows (pending)')
   })
 
   it('should show verbose output', () => {
-    const output = execSync(`node dist/cli.js stats --db ${testDbPath} --verbose`).toString()
+    const output = execSync(`${cliPath} stats --db ${testDbPath} --verbose`).toString()
     expect(output).toContain('Liteflow Statistics Dashboard')
     expect(output).toContain('test-workflow')
     expect(output).toContain('Showing')
   })
 
   it('should filter by identifier', () => {
-    const output = execSync(`node dist/cli.js stats --db ${testDbPath} --key testId --value 1`).toString()
+    const output = execSync(`${cliPath} stats --db ${testDbPath} --key testId --value 1`).toString()
     expect(output).toContain('Liteflow Statistics Dashboard')
     expect(output).toContain('Showing 1 of 1 workflows')
   })
 
   it('should handle non-existent database gracefully', () => {
     try {
-      execSync('node dist/cli.js stats --db /nonexistent/path.db', { stdio: 'pipe' })
+      execSync(`${cliPath} stats --db /nonexistent/path.db`, { stdio: 'pipe' })
     } catch (error: any) {
       const output = error.stderr?.toString() || error.stdout?.toString() || ''
       expect(output).toContain('Error')
