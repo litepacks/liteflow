@@ -10,6 +10,7 @@ A lightweight SQLite-based workflow tracker for Node.js applications.
 - Step tracking
 - Identifier-based workflow lookup
 - Workflow statistics
+- **CLI tool for real-time statistics monitoring**
 - SQLite-based storage
 - TypeScript support
 - Bulk operations support
@@ -94,6 +95,70 @@ const frequentSteps = liteflow.getMostFrequentSteps(5);
 // Get average step duration
 const stepDurations = liteflow.getAverageStepDuration();
 ```
+
+## CLI Usage
+
+Liteflow includes a powerful CLI tool for monitoring workflow statistics in real-time.
+
+### Installation
+
+After installing the package, the CLI is available as `liteflow`:
+
+```bash
+npm install -g liteflow
+# or use npx
+npx liteflow stats --db ./path/to/database.db
+```
+
+### Commands
+
+#### `stats` - Display Workflow Statistics
+
+Display general workflow statistics with various filtering and monitoring options:
+
+```bash
+# Basic usage - show statistics
+liteflow stats --db ./liteflow.db
+
+# Show verbose output with workflow details
+liteflow stats --db ./liteflow.db --verbose
+
+# Filter by workflow status
+liteflow stats --db ./liteflow.db --status pending
+liteflow stats --db ./liteflow.db --status completed
+liteflow stats --db ./liteflow.db --status failed
+
+# Filter by identifier
+liteflow stats --db ./liteflow.db --key userId --value 1001
+
+# Real-time monitoring (refreshes every 2 seconds)
+liteflow stats --db ./liteflow.db --watch
+
+# Real-time monitoring with custom interval (5 seconds)
+liteflow stats --db ./liteflow.db --watch --interval 5
+
+# Combine filters with real-time monitoring
+liteflow stats --db ./liteflow.db --status pending --watch --verbose
+```
+
+#### CLI Options
+
+- `-d, --db <path>` - Path to database file (default: `./liteflow.db`)
+- `-w, --watch` - Enable real-time monitoring (refresh every 2 seconds)
+- `-i, --interval <seconds>` - Refresh interval for watch mode in seconds (default: `2`)
+- `-s, --status <status>` - Filter by status (`pending`, `completed`, `failed`)
+- `-k, --key <key>` - Filter by identifier key
+- `-v, --value <value>` - Filter by identifier value
+- `--verbose` - Show detailed information including workflows and steps
+- `-h, --help` - Display help information
+
+### CLI Output
+
+The CLI displays:
+
+1. **General Statistics**: Total workflows, completed, pending, failed counts, and average steps per workflow
+2. **Workflow List** (with `--verbose` or filters): Detailed list of workflows with status, start time, and duration
+3. **Most Frequent Steps**: Top 5 most frequently executed steps across all workflows
 
 ## API Reference
 
