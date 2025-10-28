@@ -25,10 +25,10 @@ program
   .action(async (options) => {
     const dbPath = path.resolve(options.db)
     
-    const displayStats = () => {
+    const displayStats = async () => {
       try {
         const liteflow = new Liteflow(dbPath)
-        liteflow.init()
+        await liteflow.init()
 
         // Clear console in watch mode
         if (options.watch) {
@@ -40,7 +40,7 @@ program
         console.log(chalk.gray(`Time: ${new Date().toLocaleString()}\n`))
 
         // Get general statistics
-        const stats = liteflow.getWorkflowStats()
+        const stats = await liteflow.getWorkflowStats()
         
         // Create general stats table
         const generalTable = new Table({
@@ -76,7 +76,7 @@ program
           }
         }
 
-        const { workflows, total } = liteflow.getWorkflows(workflowOptions)
+        const { workflows, total } = await liteflow.getWorkflows(workflowOptions)
 
         // Display filtered workflows if verbose or filters are applied
         if (options.verbose || options.status || (options.key && options.value)) {
@@ -120,7 +120,7 @@ program
         }
 
         // Show most frequent steps
-        const frequentSteps = liteflow.getMostFrequentSteps(5)
+        const frequentSteps = await liteflow.getMostFrequentSteps(5)
         if (frequentSteps.length > 0) {
           console.log(chalk.bold.cyan('🔥 Most Frequent Steps\n'))
           const stepsTable = new Table({
@@ -140,6 +140,8 @@ program
           console.log(chalk.gray(`\nRefreshing in ${options.interval} seconds... (Press Ctrl+C to stop)`))
         }
 
+        await liteflow.destroy()
+
       } catch (error) {
         console.error(chalk.red('Error:'), error instanceof Error ? error.message : error)
         if (!options.watch) {
@@ -149,12 +151,12 @@ program
     }
 
     // Initial display
-    displayStats()
+    await displayStats()
 
     // Watch mode
     if (options.watch) {
       const interval = parseInt(options.interval) * 1000
-      setInterval(displayStats, interval)
+      setInterval(async () => await displayStats(), interval)
     }
   })
 
