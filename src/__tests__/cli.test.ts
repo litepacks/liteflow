@@ -7,7 +7,7 @@ describe('CLI', () => {
   const testDbPath = path.join(__dirname, 'cli-test.db')
   const cliPath = 'node dist/cli.js'
   
-  beforeEach(() => {
+  beforeEach(async () => {
     // Clean up any existing test database
     if (fs.existsSync(testDbPath)) {
       fs.unlinkSync(testDbPath)
@@ -15,7 +15,7 @@ describe('CLI', () => {
     
     // Create a fresh test database with sample data
     const liteflow = new Liteflow(testDbPath)
-    liteflow.init()
+    await liteflow.init()
     
     const workflow1 = liteflow.startWorkflow('test-workflow-1', [
       { key: 'testId', value: '1' }
@@ -28,6 +28,10 @@ describe('CLI', () => {
     ])
     workflow2.addStep('step1', { data: 'test' })
     // Leave this one pending
+    
+    // Wait for all operations to complete
+    await liteflow.flushBatchInserts()
+    await liteflow.destroy()
   })
   
   afterEach(() => {

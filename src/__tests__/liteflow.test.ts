@@ -7,17 +7,22 @@ describe('Liteflow', () => {
   let liteflow: Liteflow;
   const dbPath = join(__dirname, 'test.db');
 
-  beforeEach(() => {
+  beforeEach(async () => {
     try {
       unlinkSync(dbPath);
     } catch (error) {
       // Test database might already be deleted
     }
     liteflow = new Liteflow(dbPath);
-    liteflow.init();
+    await liteflow.init();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    try {
+      await liteflow.destroy();
+    } catch (error) {
+      // Already closed
+    }
     try {
       unlinkSync(dbPath);
     } catch (error) {
@@ -26,14 +31,14 @@ describe('Liteflow', () => {
   });
 
   describe('startWorkflow', () => {
-    it('should start a new workflow', () => {
+    it('should start a new workflow', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
       expect(workflowId).toBeDefined();
     });
 
-    it('should start a workflow with multiple identifiers', () => {
+    it('should start a workflow with multiple identifiers', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', [
         { key: 'test1', value: '123' },
         { key: 'test2', value: '456' }
@@ -41,22 +46,22 @@ describe('Liteflow', () => {
       expect(workflowId).toBeDefined();
     });
 
-    it('should handle empty identifiers array', () => {
+    it('should handle empty identifiers array', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', []);
       expect(workflowId).toBeDefined();
     });
 
-    it('should handle null identifiers', () => {
+    it('should handle null identifiers', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', null as any);
       expect(workflowId).toBeDefined();
     });
 
-    it('should handle undefined identifiers', () => {
+    it('should handle undefined identifiers', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', undefined as any);
       expect(workflowId).toBeDefined();
     });
 
-    it('should handle invalid identifier format', () => {
+    it('should handle invalid identifier format', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: 123 } as any
       ]);
@@ -65,80 +70,93 @@ describe('Liteflow', () => {
   });
 
   describe('addStep', () => {
-    it('should add a step to a workflow', () => {
+    it('should add a step to a workflow', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
       liteflow.addStep(workflowId, 'test-step', { data: 'test' });
-      const steps = liteflow.getSteps(workflowId);
+      await liteflow.flushBatchInserts();
+      const steps = await liteflow.getSteps(workflowId);
       expect(steps).toHaveLength(1);
       expect(steps[0].step).toBe('test-step');
     });
 
-    it('should add multiple steps to a workflow', () => {
+    it('should add multiple steps to a workflow', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
       liteflow.addStep(workflowId, 'step1', { data: 'test1' });
       liteflow.addStep(workflowId, 'step2', { data: 'test2' });
-      const steps = liteflow.getSteps(workflowId);
+      await liteflow.flushBatchInserts();
+      const steps = await liteflow.getSteps(workflowId);
       expect(steps).toHaveLength(2);
     });
 
-    it('should handle empty data object', () => {
+    it('should handle empty data object', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
       liteflow.addStep(workflowId, 'test-step', {});
-      const steps = liteflow.getSteps(workflowId);
+      await liteflow.flushBatchInserts();
+      const steps = await liteflow.getSteps(workflowId);
       expect(steps).toHaveLength(1);
     });
 
-    it('should handle null data', () => {
+    it('should handle null data', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
       liteflow.addStep(workflowId, 'test-step', null as any);
-      const steps = liteflow.getSteps(workflowId);
+      await liteflow.flushBatchInserts();
+      const steps = await liteflow.getSteps(workflowId);
       expect(steps).toHaveLength(1);
     });
 
-    it('should handle undefined data', () => {
+    it('should handle undefined data', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
       liteflow.addStep(workflowId, 'test-step', undefined as any);
-      const steps = liteflow.getSteps(workflowId);
+      await liteflow.flushBatchInserts();
+      const steps = await liteflow.getSteps(workflowId);
       expect(steps).toHaveLength(1);
     });
 
-    it('should handle non-existent workflow', () => {
-      const result = liteflow.addStep('non-existent', 'test-step', { data: 'test' });
-      expect(result).toBeUndefined();
+    it('should handle non-existent workflow', async () => {
+      // addStep doesn't throw for non-existent workflows, it just queues the step
+      // The error will occur when flushBatchInserts is called
+      liteflow.addStep('non-existent', 'test-step', { data: 'test' });
+      await liteflow.flushBatchInserts();
+      // No error should be thrown, just logged
     });
 
-    it('should handle invalid step name', () => {
+    it('should handle invalid step name', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
-      const result = liteflow.addStep(workflowId, null as any, { data: 'test' });
-      expect(result).toBeUndefined();
+      // addStep with null step name fails silently in batch mode
+      liteflow.addStep(workflowId, null as any, { data: 'test' });
+      await liteflow.flushBatchInserts();
+      const steps = await liteflow.getSteps(workflowId);
+      // Null step names cause batch insert to fail, resulting in 0 steps
+      expect(steps).toHaveLength(0);
     });
 
     describe('dynamic data types', () => {
-      it('should handle numeric data', () => {
+      it('should handle numeric data', async () => {
         const workflowId = liteflow.startWorkflow('test-workflow', [
           { key: 'test', value: '123' }
         ]);
         liteflow.addStep(workflowId, 'numeric-step', { count: 123, price: 99.99 });
-        const steps = liteflow.getSteps(workflowId);
+        await liteflow.flushBatchInserts();
+        const steps = await liteflow.getSteps(workflowId);
         expect(steps).toHaveLength(1);
         const data = JSON.parse(steps[0].data);
         expect(data.count).toBe(123);
         expect(data.price).toBe(99.99);
       });
 
-      it('should handle complex objects', () => {
+      it('should handle complex objects', async () => {
         const workflowId = liteflow.startWorkflow('test-workflow', [
           { key: 'test', value: '123' }
         ]);
@@ -158,7 +176,8 @@ describe('Liteflow', () => {
           }
         };
         liteflow.addStep(workflowId, 'complex-step', complexData);
-        const steps = liteflow.getSteps(workflowId);
+        await liteflow.flushBatchInserts();
+        const steps = await liteflow.getSteps(workflowId);
         expect(steps).toHaveLength(1);
         const data = JSON.parse(steps[0].data);
         expect(data.user.id).toBe(1);
@@ -167,7 +186,7 @@ describe('Liteflow', () => {
         expect(data.settings.notifications).toBe(true);
       });
 
-      it('should handle arrays', () => {
+      it('should handle arrays', async () => {
         const workflowId = liteflow.startWorkflow('test-workflow', [
           { key: 'test', value: '123' }
         ]);
@@ -179,7 +198,8 @@ describe('Liteflow', () => {
           ]
         };
         liteflow.addStep(workflowId, 'array-step', arrayData);
-        const steps = liteflow.getSteps(workflowId);
+        await liteflow.flushBatchInserts();
+        const steps = await liteflow.getSteps(workflowId);
         expect(steps).toHaveLength(1);
         const data = JSON.parse(steps[0].data);
         expect(data.items).toEqual([1, 2, 3]);
@@ -187,7 +207,7 @@ describe('Liteflow', () => {
         expect(data.users[0].name).toBe('Ahmet');
       });
 
-      it('should handle boolean values', () => {
+      it('should handle boolean values', async () => {
         const workflowId = liteflow.startWorkflow('test-workflow', [
           { key: 'test', value: '123' }
         ]);
@@ -198,7 +218,8 @@ describe('Liteflow', () => {
             darkMode: true
           }
         });
-        const steps = liteflow.getSteps(workflowId);
+        await liteflow.flushBatchInserts();
+        const steps = await liteflow.getSteps(workflowId);
         expect(steps).toHaveLength(1);
         const data = JSON.parse(steps[0].data);
         expect(data.isActive).toBe(true);
@@ -206,7 +227,7 @@ describe('Liteflow', () => {
         expect(data.settings.darkMode).toBe(true);
       });
 
-      it('should handle mixed data types', () => {
+      it('should handle mixed data types', async () => {
         const workflowId = liteflow.startWorkflow('test-workflow', [
           { key: 'test', value: '123' }
         ]);
@@ -223,7 +244,8 @@ describe('Liteflow', () => {
           nullValue: null
         };
         liteflow.addStep(workflowId, 'mixed-step', mixedData);
-        const steps = liteflow.getSteps(workflowId);
+        await liteflow.flushBatchInserts();
+        const steps = await liteflow.getSteps(workflowId);
         expect(steps).toHaveLength(1);
         const data = JSON.parse(steps[0].data);
         expect(data.string).toBe('test');
@@ -236,38 +258,86 @@ describe('Liteflow', () => {
     });
   });
 
-  describe('getWorkflowByIdentifier', () => {
-    it('should find a workflow by identifier', () => {
+  describe('addSteps (batch insert)', () => {
+    it('should add multiple steps in a single batch operation', async () => {
+      const workflowId = liteflow.startWorkflow('test-workflow', [
+        { key: 'test', value: '123' }
+      ]);
+      
+      await liteflow.addSteps(workflowId, [
+        { step: 'step1', data: { value: 1 } },
+        { step: 'step2', data: { value: 2 } },
+        { step: 'step3', data: { value: 3 } }
+      ]);
+      
+      const steps = await liteflow.getSteps(workflowId);
+      expect(steps).toHaveLength(3);
+      expect(steps[0].step).toBe('step1');
+      expect(steps[1].step).toBe('step2');
+      expect(steps[2].step).toBe('step3');
+    });
+
+    it('should handle empty batch', async () => {
+      const workflowId = liteflow.startWorkflow('test-workflow', [
+        { key: 'test', value: '123' }
+      ]);
+      
+      await liteflow.addSteps(workflowId, []);
+      
+      const steps = await liteflow.getSteps(workflowId);
+      expect(steps).toHaveLength(0);
+    });
+
+    it('should work with WorkflowInstance', async () => {
       const workflow = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
-      const result = liteflow.getWorkflowByIdentifier('test', '123');
+      
+      await workflow.addSteps([
+        { step: 'batch-step1', data: { test: 'data1' } },
+        { step: 'batch-step2', data: { test: 'data2' } }
+      ]);
+      
+      const steps = await workflow.getSteps();
+      expect(steps).toHaveLength(2);
+      expect(steps[0].step).toBe('batch-step1');
+      expect(steps[1].step).toBe('batch-step2');
+    });
+  });
+
+  describe('getWorkflowByIdentifier', () => {
+    it('should find a workflow by identifier', async () => {
+      const workflow = liteflow.startWorkflow('test-workflow', [
+        { key: 'test', value: '123' }
+      ]);
+      const result = await liteflow.getWorkflowByIdentifier('test', '123');
       expect(result).toBeDefined();
       expect(result?.id).toBe(workflow.id);
     });
 
-    it('should return undefined for non-existent identifier', () => {
-      const workflow = liteflow.getWorkflowByIdentifier('nonexistent', '123');
+    it('should return undefined for non-existent identifier', async () => {
+      const workflow = await liteflow.getWorkflowByIdentifier('nonexistent', '123');
       expect(workflow).toBeUndefined();
     });
   });
 
   describe('getSteps', () => {
-    it('should return empty array for workflow with no steps', () => {
+    it('should return empty array for workflow with no steps', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
-      const steps = liteflow.getSteps(workflowId);
+      const steps = await liteflow.getSteps(workflowId);
       expect(steps).toHaveLength(0);
     });
 
-    it('should return all steps for a workflow', () => {
+    it('should return all steps for a workflow', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
       liteflow.addStep(workflowId, 'step1', { data: 'test1' });
       liteflow.addStep(workflowId, 'step2', { data: 'test2' });
-      const steps = liteflow.getSteps(workflowId);
+      await liteflow.flushBatchInserts();
+      const steps = await liteflow.getSteps(workflowId);
       expect(steps).toHaveLength(2);
       expect(steps[0].step).toBe('step1');
       expect(steps[1].step).toBe('step2');
@@ -275,26 +345,26 @@ describe('Liteflow', () => {
   });
 
   describe('completeWorkflow', () => {
-    it('should mark a workflow as completed', () => {
+    it('should mark a workflow as completed', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
       liteflow.completeWorkflow(workflowId);
-      const workflow = liteflow.getWorkflowByIdentifier('test', '123');
+      const workflow = await liteflow.getWorkflowByIdentifier('test', '123');
       expect(workflow?.status).toBe('completed');
     });
   });
 
   describe('getWorkflowStats', () => {
-    it('should return correct stats for empty database', () => {
-      const stats = liteflow.getWorkflowStats();
+    it('should return correct stats for empty database', async () => {
+      const stats = await liteflow.getWorkflowStats();
       expect(stats.total).toBe(0);
       expect(stats.completed).toBe(0);
       expect(stats.pending).toBe(0);
       expect(stats.avgSteps).toBe(0);
     });
 
-    it('should return correct stats for workflows', () => {
+    it('should return correct stats for workflows', async () => {
       // Create completed workflow
       const workflowId1 = liteflow.startWorkflow('test-workflow', [
         { key: 'test1', value: '123' }
@@ -309,16 +379,17 @@ describe('Liteflow', () => {
       ]);
       liteflow.addStep(workflowId2, 'step1', { data: 'test1' });
 
-      const stats = liteflow.getWorkflowStats();
+      await liteflow.flushBatchInserts();
+      const stats = await liteflow.getWorkflowStats();
       expect(stats.total).toBe(2);
       expect(stats.completed).toBe(1);
       expect(stats.pending).toBe(1);
       expect(stats.avgSteps).toBe(1.5);
     });
 
-    it('should handle database errors gracefully', () => {
+    it('should handle database errors gracefully', async () => {
       // Create error with invalid query
-      const result = liteflow.getWorkflowStats();
+      const result = await liteflow.getWorkflowStats();
       expect(result).toEqual({
         total: 0,
         completed: 0,
@@ -329,70 +400,70 @@ describe('Liteflow', () => {
   });
 
   describe('attachIdentifier', () => {
-    it('should attach a new identifier to an existing workflow', () => {
+    it('should attach a new identifier to an existing workflow', async () => {
       const workflow = liteflow.startWorkflow('test-workflow', [
         { key: 'test1', value: '123' }
       ]);
-      const result = liteflow.attachIdentifier('test1', '123', { key: 'test2', value: '456' });
+      const result = await liteflow.attachIdentifier('test1', '123', { key: 'test2', value: '456' });
       expect(result).toBe(true);
-      const foundWorkflow = liteflow.getWorkflowByIdentifier('test2', '456');
+      const foundWorkflow = await liteflow.getWorkflowByIdentifier('test2', '456');
       expect(foundWorkflow?.id).toBe(workflow.id);
     });
 
-    it('should not attach duplicate identifier', () => {
+    it('should not attach duplicate identifier', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', [
         { key: 'test1', value: '123' }
       ]);
-      liteflow.attachIdentifier('test1', '123', { key: 'test2', value: '456' });
-      const result = liteflow.attachIdentifier('test1', '123', { key: 'test2', value: '456' });
+      await liteflow.attachIdentifier('test1', '123', { key: 'test2', value: '456' });
+      const result = await liteflow.attachIdentifier('test1', '123', { key: 'test2', value: '456' });
       expect(result).toBe(false);
     });
 
-    it('should handle non-existent workflow', () => {
-      const result = liteflow.attachIdentifier('nonexistent', '123', { key: 'test2', value: '456' });
+    it('should handle non-existent workflow', async () => {
+      const result = await liteflow.attachIdentifier('nonexistent', '123', { key: 'test2', value: '456' });
       expect(result).toBe(false);
     });
 
-    it('should handle empty identifiers', () => {
+    it('should handle empty identifiers', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', []);
-      const result = liteflow.attachIdentifier('', '', { key: 'test2', value: '456' });
+      const result = await liteflow.attachIdentifier('', '', { key: 'test2', value: '456' });
       expect(result).toBe(false);
     });
 
-    it('should handle null identifiers', () => {
+    it('should handle null identifiers', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', []);
-      const result = liteflow.attachIdentifier(null as any, null as any, { key: 'test2', value: '456' });
+      const result = await liteflow.attachIdentifier(null as any, null as any, { key: 'test2', value: '456' });
       expect(result).toBe(false);
     });
 
-    it('should handle undefined identifiers', () => {
+    it('should handle undefined identifiers', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', []);
-      const result = liteflow.attachIdentifier(undefined as any, undefined as any, { key: 'test2', value: '456' });
+      const result = await liteflow.attachIdentifier(undefined as any, undefined as any, { key: 'test2', value: '456' });
       expect(result).toBe(false);
     });
 
-    it('should handle invalid new identifier', () => {
+    it('should handle invalid new identifier', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', [
         { key: 'test1', value: '123' }
       ]);
-      const result = liteflow.attachIdentifier('test1', '123', null as any);
+      const result = await liteflow.attachIdentifier('test1', '123', null as any);
       expect(result).toBe(false);
     });
 
-    it('should handle database errors gracefully', () => {
+    it('should handle database errors gracefully', async () => {
       // Create error with invalid query
-      const result = liteflow.attachIdentifier(null as any, null as any, null as any);
+      const result = await liteflow.attachIdentifier(null as any, null as any, null as any);
       expect(result).toBe(false);
     });
   });
 
   describe('getMostFrequentSteps', () => {
-    it('should return empty array for no steps', () => {
-      const steps = liteflow.getMostFrequentSteps();
+    it('should return empty array for no steps', async () => {
+      const steps = await liteflow.getMostFrequentSteps();
       expect(steps).toHaveLength(0);
     });
 
-    it('should return most frequent steps', () => {
+    it('should return most frequent steps', async () => {
       const workflowId1 = liteflow.startWorkflow('test-workflow', [
         { key: 'test1', value: '123' }
       ]);
@@ -406,7 +477,8 @@ describe('Liteflow', () => {
       liteflow.addStep(workflowId2, 'step1', { data: 'test4' });
       liteflow.addStep(workflowId2, 'step2', { data: 'test5' });
 
-      const steps = liteflow.getMostFrequentSteps(2);
+      await liteflow.flushBatchInserts();
+      const steps = await liteflow.getMostFrequentSteps(2);
       expect(steps).toHaveLength(2);
       expect(steps[0].step).toBe('step1');
       expect(steps[0].count).toBe(3);
@@ -414,20 +486,20 @@ describe('Liteflow', () => {
       expect(steps[1].count).toBe(2);
     });
 
-    it('should handle database errors gracefully', () => {
+    it('should handle database errors gracefully', async () => {
       // Create error with invalid query
-      const result = liteflow.getMostFrequentSteps(-1);
+      const result = await liteflow.getMostFrequentSteps(-1);
       expect(result).toEqual([]);
     });
   });
 
   describe('getAverageStepDuration', () => {
-    it('should return empty array for no steps', () => {
-      const durations = liteflow.getAverageStepDuration();
+    it('should return empty array for no steps', async () => {
+      const durations = await liteflow.getAverageStepDuration();
       expect(durations).toHaveLength(0);
     });
 
-    it('should calculate average step duration', () => {
+    it('should calculate average step duration', async () => {
       const workflow = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
@@ -435,39 +507,41 @@ describe('Liteflow', () => {
       liteflow.addStep(workflow, 'step2', { data: 'test2' });
       liteflow.addStep(workflow, 'step3', { data: 'test3' });
 
-      const durations = liteflow.getAverageStepDuration();
+      await liteflow.flushBatchInserts();
+      const durations = await liteflow.getAverageStepDuration();
       expect(durations).toHaveLength(1);
       expect(durations[0].workflow_id).toBe(workflow.id);
       expect(durations[0].step_count).toBe(3);
     });
 
-    it('should handle database errors gracefully', () => {
+    it('should handle database errors gracefully', async () => {
       // Create error with invalid query
-      const result = liteflow.getAverageStepDuration();
+      const result = await liteflow.getAverageStepDuration();
       expect(result).toEqual([]);
     });
   });
 
   describe('getStepsByIdentifier', () => {
-    it('should return empty array for non-existent identifier', () => {
-      const steps = liteflow.getStepsByIdentifier('nonexistent', '123');
+    it('should return empty array for non-existent identifier', async () => {
+      const steps = await liteflow.getStepsByIdentifier('nonexistent', '123');
       expect(steps).toHaveLength(0);
     });
 
-    it('should return all steps for a workflow with given identifier', () => {
+    it('should return all steps for a workflow with given identifier', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
       liteflow.addStep(workflowId, 'step1', { data: 'test1' });
       liteflow.addStep(workflowId, 'step2', { data: 'test2' });
+      await liteflow.flushBatchInserts();
 
-      const steps = liteflow.getStepsByIdentifier('test', '123');
+      const steps = await liteflow.getStepsByIdentifier('test', '123');
       expect(steps).toHaveLength(2);
       expect(steps[0].step).toBe('step1');
       expect(steps[1].step).toBe('step2');
     });
 
-    it('should return steps from multiple workflows with same identifier', () => {
+    it('should return steps from multiple workflows with same identifier', async () => {
       // First workflow
       const workflowId1 = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
@@ -480,13 +554,14 @@ describe('Liteflow', () => {
         { key: 'test', value: '123' }
       ]);
       liteflow.addStep(workflowId2, 'step3', { data: 'test3' });
+      await liteflow.flushBatchInserts();
 
-      const steps = liteflow.getStepsByIdentifier('test', '123');
+      const steps = await liteflow.getStepsByIdentifier('test', '123');
       expect(steps).toHaveLength(3);
       expect(steps.map(s => s.step)).toEqual(['step1', 'step2', 'step3']);
     });
 
-    it('should return steps ordered by creation time', () => {
+    it('should return steps ordered by creation time', async () => {
       const workflowId = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
@@ -495,15 +570,16 @@ describe('Liteflow', () => {
       liteflow.addStep(workflowId, 'step2', { data: 'test2' });
       liteflow.addStep(workflowId, 'step1', { data: 'test1' });
       liteflow.addStep(workflowId, 'step3', { data: 'test3' });
+      await liteflow.flushBatchInserts();
 
-      const steps = liteflow.getStepsByIdentifier('test', '123');
+      const steps = await liteflow.getStepsByIdentifier('test', '123');
       expect(steps).toHaveLength(3);
       expect(steps.map(s => s.step)).toEqual(['step2', 'step1', 'step3']);
     });
 
-    it('should handle database errors gracefully', () => {
+    it('should handle database errors gracefully', async () => {
       // Create error with invalid query
-      const result = liteflow.getStepsByIdentifier(null as any, null as any);
+      const result = await liteflow.getStepsByIdentifier(null as any, null as any);
       expect(result).toEqual([]);
     });
   });
@@ -529,8 +605,8 @@ describe('Liteflow', () => {
       liteflow.failWorkflow(workflowId3, 'Test failure');
     });
 
-    it('should return all workflows with pagination info by default', () => {
-      const result = liteflow.getWorkflows();
+    it('should return all workflows with pagination info by default', async () => {
+      const result = await liteflow.getWorkflows();
       expect(result.workflows).toHaveLength(3);
       expect(result.total).toBe(3);
       expect(result.page).toBe(1);
@@ -538,24 +614,24 @@ describe('Liteflow', () => {
       expect(result.totalPages).toBe(1);
     });
 
-    it('should filter workflows by status', () => {
-      const completed = liteflow.getWorkflows({ status: 'completed' });
+    it('should filter workflows by status', async () => {
+      const completed = await liteflow.getWorkflows({ status: 'completed' });
       expect(completed.workflows).toHaveLength(1);
       expect(completed.workflows[0].status).toBe('completed');
       expect(completed.total).toBe(1);
 
-      const pending = liteflow.getWorkflows({ status: 'pending' });
+      const pending = await liteflow.getWorkflows({ status: 'pending' });
       expect(pending.workflows).toHaveLength(1);
       expect(pending.workflows[0].status).toBe('pending');
       expect(pending.total).toBe(1);
 
-      const failed = liteflow.getWorkflows({ status: 'failed' });
+      const failed = await liteflow.getWorkflows({ status: 'failed' });
       expect(failed.workflows).toHaveLength(1);
       expect(failed.workflows[0].status).toBe('failed');
       expect(failed.total).toBe(1);
     });
 
-    it('should support pagination', () => {
+    it('should support pagination', async () => {
       // Add more test data
       for (let i = 4; i <= 15; i++) {
         const workflowId = liteflow.startWorkflow(`test-workflow-${i}`, [
@@ -564,29 +640,29 @@ describe('Liteflow', () => {
         liteflow.addStep(workflowId, 'step1', { data: `test${i}` });
       }
 
-      const firstPage = liteflow.getWorkflows({ page: 1, pageSize: 5 });
+      const firstPage = await liteflow.getWorkflows({ page: 1, pageSize: 5 });
       expect(firstPage.workflows).toHaveLength(5);
       expect(firstPage.total).toBe(15);
       expect(firstPage.page).toBe(1);
       expect(firstPage.pageSize).toBe(5);
       expect(firstPage.totalPages).toBe(3);
 
-      const secondPage = liteflow.getWorkflows({ page: 2, pageSize: 5 });
+      const secondPage = await liteflow.getWorkflows({ page: 2, pageSize: 5 });
       expect(secondPage.workflows).toHaveLength(5);
       expect(secondPage.page).toBe(2);
 
-      const lastPage = liteflow.getWorkflows({ page: 3, pageSize: 5 });
+      const lastPage = await liteflow.getWorkflows({ page: 3, pageSize: 5 });
       expect(lastPage.workflows).toHaveLength(5);
       expect(lastPage.page).toBe(3);
     });
 
-    it('should order results by started_at', () => {
-      const result = liteflow.getWorkflows({ orderBy: 'started_at', order: 'asc' });
+    it('should order results by started_at', async () => {
+      const result = await liteflow.getWorkflows({ orderBy: 'started_at', order: 'asc' });
       expect(result.workflows[0].name).toBe('test-workflow-1');
       expect(result.workflows[2].name).toBe('test-workflow-3');
     });
 
-    it('should handle empty database', () => {
+    it('should handle empty database', async () => {
       // Clear existing database
       try {
         unlinkSync(dbPath);
@@ -596,15 +672,15 @@ describe('Liteflow', () => {
       liteflow = new Liteflow(dbPath);
       liteflow.init();
 
-      const result = liteflow.getWorkflows();
+      const result = await liteflow.getWorkflows();
       expect(result.workflows).toHaveLength(0);
       expect(result.total).toBe(0);
       expect(result.totalPages).toBe(0);
     });
 
-    it('should filter workflows by identifier key and value', () => {
+    it('should filter workflows by identifier key and value', async () => {
       // Get workflow with test1:123 identifier
-      const result1 = liteflow.getWorkflows({
+      const result1 = await liteflow.getWorkflows({
         identifier: { key: 'test1', value: '123' }
       });
       expect(result1.workflows).toHaveLength(1);
@@ -612,7 +688,7 @@ describe('Liteflow', () => {
       expect(result1.total).toBe(1);
 
       // Get workflow with test1:789 identifier
-      const result2 = liteflow.getWorkflows({
+      const result2 = await liteflow.getWorkflows({
         identifier: { key: 'test1', value: '789' }
       });
       expect(result2.workflows).toHaveLength(1);
@@ -620,7 +696,7 @@ describe('Liteflow', () => {
       expect(result2.total).toBe(1);
 
       // Get workflow with test2:456 identifier
-      const result3 = liteflow.getWorkflows({
+      const result3 = await liteflow.getWorkflows({
         identifier: { key: 'test2', value: '456' }
       });
       expect(result3.workflows).toHaveLength(1);
@@ -628,16 +704,16 @@ describe('Liteflow', () => {
       expect(result3.total).toBe(1);
 
       // Should return empty result for non-existent identifier
-      const result4 = liteflow.getWorkflows({
+      const result4 = await liteflow.getWorkflows({
         identifier: { key: 'nonexistent', value: '123' }
       });
       expect(result4.workflows).toHaveLength(0);
       expect(result4.total).toBe(0);
     });
 
-    it('should combine identifier filter with status filter', () => {
+    it('should combine identifier filter with status filter', async () => {
       // Get workflows with test1 key and completed status
-      const result1 = liteflow.getWorkflows({
+      const result1 = await liteflow.getWorkflows({
         identifier: { key: 'test1', value: '123' },
         status: 'completed'
       });
@@ -646,7 +722,7 @@ describe('Liteflow', () => {
       expect(result1.total).toBe(1);
 
       // Get workflows with test1 key and failed status
-      const result2 = liteflow.getWorkflows({
+      const result2 = await liteflow.getWorkflows({
         identifier: { key: 'test1', value: '789' },
         status: 'failed'
       });
@@ -655,7 +731,7 @@ describe('Liteflow', () => {
       expect(result2.total).toBe(1);
 
       // Get workflows with test1 key and pending status
-      const result3 = liteflow.getWorkflows({
+      const result3 = await liteflow.getWorkflows({
         identifier: { key: 'test1', value: '123' },
         status: 'pending'
       });
@@ -663,9 +739,9 @@ describe('Liteflow', () => {
       expect(result3.total).toBe(0);
     });
 
-    it('should handle database errors gracefully', () => {
+    it('should handle database errors gracefully', async () => {
       // Create error with invalid query
-      const result = liteflow.getWorkflows({ orderBy: 'invalid_column' as any });
+      const result = await liteflow.getWorkflows({ orderBy: 'invalid_column' as any });
       expect(result).toEqual({
         workflows: [],
         total: 0,
@@ -677,39 +753,40 @@ describe('Liteflow', () => {
   });
 
   describe('deleteWorkflow', () => {
-    it('should delete a workflow and its steps', () => {
+    it('should delete a workflow and its steps', async () => {
       // Create test workflow
       const workflowId = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
       liteflow.addStep(workflowId, 'step1', { data: 'test1' });
       liteflow.addStep(workflowId, 'step2', { data: 'test2' });
+      await liteflow.flushBatchInserts();
 
       // Delete workflow
-      const result = liteflow.deleteWorkflow(workflowId);
+      const result = await liteflow.deleteWorkflow(workflowId);
       expect(result).toBe(true);
 
       // Check if workflow is deleted
-      const workflow = liteflow.getWorkflowByIdentifier('test', '123');
+      const workflow = await liteflow.getWorkflowByIdentifier('test', '123');
       expect(workflow).toBeUndefined();
 
       // Check if steps are deleted
-      const steps = liteflow.getSteps(workflowId);
+      const steps = await liteflow.getSteps(workflowId);
       expect(steps).toHaveLength(0);
     });
 
-    it('should return false for non-existent workflow', () => {
-      const result = liteflow.deleteWorkflow('non-existent-id');
+    it('should return false for non-existent workflow', async () => {
+      const result = await liteflow.deleteWorkflow('non-existent-id');
       expect(result).toBe(false);
     });
 
-    it('should handle database errors gracefully', () => {
+    it('should handle database errors gracefully', async () => {
       // Try to delete with invalid workflow ID
-      const result = liteflow.deleteWorkflow(null as any);
+      const result = await liteflow.deleteWorkflow(null as any);
       expect(result).toBe(false);
     });
 
-    it('should maintain data integrity after deletion', () => {
+    it('should maintain data integrity after deletion', async () => {
       // Create two workflows
       const workflow1 = liteflow.startWorkflow('workflow-1', [
         { key: 'test1', value: '123' }
@@ -721,16 +798,17 @@ describe('Liteflow', () => {
       // Add steps to both workflows
       liteflow.addStep(workflow1, 'step1', { data: 'test1' });
       liteflow.addStep(workflow2, 'step1', { data: 'test2' });
+      await liteflow.flushBatchInserts();
 
       // Delete first workflow
-      liteflow.deleteWorkflow(workflow1);
+      await liteflow.deleteWorkflow(workflow1);
 
       // Check if second workflow and its steps still exist
-      const foundWorkflow2 = liteflow.getWorkflowByIdentifier('test2', '456');
+      const foundWorkflow2 = await liteflow.getWorkflowByIdentifier('test2', '456');
       expect(foundWorkflow2).toBeDefined();
       expect(foundWorkflow2?.id).toBe(workflow2.id);
 
-      const steps2 = liteflow.getSteps(workflow2);
+      const steps2 = await liteflow.getSteps(workflow2);
       expect(steps2).toHaveLength(1);
     });
   });
@@ -750,38 +828,38 @@ describe('Liteflow', () => {
       liteflow.addStep(workflowId2, 'step2', { data: 'test2' });
     });
 
-    it('should delete all workflows and their steps', () => {
+    it('should delete all workflows and their steps', async () => {
       // Delete all workflows
-      const result = liteflow.deleteAllWorkflows();
+      const result = await liteflow.deleteAllWorkflows();
       expect(result).toBe(true);
 
       // Check if workflows are deleted
-      const workflows = liteflow.getWorkflows();
+      const workflows = await liteflow.getWorkflows();
       expect(workflows.workflows).toHaveLength(0);
       expect(workflows.total).toBe(0);
 
       // Check if steps are deleted
-      const stats = liteflow.getWorkflowStats();
+      const stats = await liteflow.getWorkflowStats();
       expect(stats.avgSteps).toBe(0);
     });
 
-    it('should handle empty database', () => {
+    it('should handle empty database', async () => {
       // First delete all data
-      liteflow.deleteAllWorkflows();
+      await liteflow.deleteAllWorkflows();
 
       // Try to delete again on empty database
-      const result = liteflow.deleteAllWorkflows();
+      const result = await liteflow.deleteAllWorkflows();
       expect(result).toBe(true);
 
       // Check if database is still empty
-      const workflows = liteflow.getWorkflows();
+      const workflows = await liteflow.getWorkflows();
       expect(workflows.workflows).toHaveLength(0);
       expect(workflows.total).toBe(0);
     });
 
-    it('should maintain data integrity after deletion', () => {
+    it('should maintain data integrity after deletion', async () => {
       // Delete all workflows
-      liteflow.deleteAllWorkflows();
+      await liteflow.deleteAllWorkflows();
 
       // Create new workflow
       const newWorkflowId = liteflow.startWorkflow('new-workflow', [
@@ -790,31 +868,32 @@ describe('Liteflow', () => {
       liteflow.addStep(newWorkflowId, 'step1', { data: 'test' });
 
       // Check if new workflow is created correctly
-      const workflows = liteflow.getWorkflows();
+      const workflows = await liteflow.getWorkflows();
       expect(workflows.workflows).toHaveLength(1);
       expect(workflows.workflows[0].name).toBe('new-workflow');
 
-      const steps = liteflow.getSteps(newWorkflowId);
+      await liteflow.flushBatchInserts();
+      const steps = await liteflow.getSteps(newWorkflowId);
       expect(steps).toHaveLength(1);
       expect(steps[0].step).toBe('step1');
     });
 
-    it('should handle database errors gracefully', () => {
+    it('should handle database errors gracefully', async () => {
       // Break database connection
-      liteflow.db.close();
+      await liteflow.db.destroy();
       
       // Try to delete
-      const result = liteflow.deleteAllWorkflows();
+      const result = await liteflow.deleteAllWorkflows();
       expect(result).toBe(false);
 
       // Restart database
-      liteflow.db = new Database(dbPath);
-      liteflow.init();
+      liteflow = new Liteflow(dbPath);
+      await liteflow.init();
     });
   });
 
   describe('WorkflowInstance API', () => {
-    it('should allow adding steps via workflow instance', () => {
+    it('should allow adding steps via workflow instance', async () => {
       const workflow = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
@@ -822,49 +901,51 @@ describe('Liteflow', () => {
       // Use instance method
       workflow.addStep('step1', { data: 'test1' });
       workflow.addStep('step2', { data: 'test2' });
+      await liteflow.flushBatchInserts();
       
-      const steps = workflow.getSteps();
+      const steps = await workflow.getSteps();
       expect(steps).toHaveLength(2);
       expect(steps[0].step).toBe('step1');
       expect(steps[1].step).toBe('step2');
     });
 
-    it('should allow completing workflow via instance', () => {
+    it('should allow completing workflow via instance', async () => {
       const workflow = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
       
       workflow.complete();
       
-      const result = liteflow.getWorkflowByIdentifier('test', '123');
+      const result = await liteflow.getWorkflowByIdentifier('test', '123');
       expect(result?.status).toBe('completed');
     });
 
-    it('should allow failing workflow via instance', () => {
+    it('should allow failing workflow via instance', async () => {
       const workflow = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
       
       workflow.fail('Test failure reason');
       
-      const result = liteflow.getWorkflowByIdentifier('test', '123');
+      const result = await liteflow.getWorkflowByIdentifier('test', '123');
       expect(result?.status).toBe('failed');
     });
 
-    it('should allow deleting workflow via instance', () => {
+    it('should allow deleting workflow via instance', async () => {
       const workflow = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
       workflow.addStep('step1', { data: 'test1' });
+      await liteflow.flushBatchInserts();
       
-      const deleted = workflow.delete();
+      const deleted = await workflow.delete();
       expect(deleted).toBe(true);
       
-      const result = liteflow.getWorkflowByIdentifier('test', '123');
+      const result = await liteflow.getWorkflowByIdentifier('test', '123');
       expect(result).toBeUndefined();
     });
 
-    it('should provide workflow ID via .id property', () => {
+    it('should provide workflow ID via .id property', async () => {
       const workflow = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
@@ -873,7 +954,7 @@ describe('Liteflow', () => {
       expect(typeof workflow.id).toBe('string');
     });
 
-    it('should convert to string representation', () => {
+    it('should convert to string representation', async () => {
       const workflow = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
@@ -883,7 +964,7 @@ describe('Liteflow', () => {
       expect(typeof str).toBe('string');
     });
 
-    it('should work with both old and new API styles', () => {
+    it('should work with both old and new API styles', async () => {
       const workflow = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
@@ -894,13 +975,14 @@ describe('Liteflow', () => {
       // New style - using workflow instance methods
       workflow.addStep('step2', { data: 'test2' });
       
-      const steps = liteflow.getSteps(workflow);
+      await liteflow.flushBatchInserts();
+      const steps = await liteflow.getSteps(workflow);
       expect(steps).toHaveLength(2);
       expect(steps[0].step).toBe('step1');
       expect(steps[1].step).toBe('step2');
     });
 
-    it('should chain operations on workflow instance', () => {
+    it('should chain operations on workflow instance', async () => {
       const workflow = liteflow.startWorkflow('test-workflow', [
         { key: 'test', value: '123' }
       ]);
@@ -909,10 +991,11 @@ describe('Liteflow', () => {
       workflow.addStep('step2', { data: 'test2' });
       workflow.complete();
       
-      const result = liteflow.getWorkflowByIdentifier('test', '123');
+      const result = await liteflow.getWorkflowByIdentifier('test', '123');
       expect(result?.status).toBe('completed');
       
-      const steps = workflow.getSteps();
+      await liteflow.flushBatchInserts();
+      const steps = await workflow.getSteps();
       expect(steps).toHaveLength(2);
     });
   });
