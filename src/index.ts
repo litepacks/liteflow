@@ -1,6 +1,6 @@
 import { Knex, knex } from 'knex'
 import { v4 as uuidv4 } from 'uuid'
-import { Workflow, WorkflowStep, WorkflowStats, Identifier } from './types'
+import { Workflow, WorkflowStep, WorkflowStats, Identifier, GetWorkflowsOptions } from './types'
 
 export interface LiteflowConfig {
   client: 'sqlite3' | 'pg' | 'mysql' | 'mysql2'
@@ -419,17 +419,7 @@ export class Liteflow {
     })
   }
 
-  async getWorkflows(options: {
-    status?: 'pending' | 'completed' | 'failed';
-    page?: number;
-    pageSize?: number;
-    orderBy?: 'started_at' | 'ended_at';
-    order?: 'asc' | 'desc';
-    identifier?: {
-      key: string;
-      value: string;
-    };
-  } = {}): Promise<{ workflows: Workflow[], total: number, page: number, pageSize: number, totalPages: number }> {
+  async getWorkflows(options: GetWorkflowsOptions = {}): Promise<{ workflows: Workflow[], total: number, page: number, pageSize: number, totalPages: number }> {
     return this.wrap(async () => {
       const {
         status,
@@ -437,7 +427,11 @@ export class Liteflow {
         pageSize = 10,
         orderBy = 'started_at',
         order = 'desc',
-        identifier
+        identifier,
+        name,
+        startDate,
+        endDate,
+        step
       } = options;
 
       const offset = (page - 1) * pageSize;
@@ -449,6 +443,43 @@ export class Liteflow {
       if (status) {
         countQuery = countQuery.where({ status })
         dataQuery = dataQuery.where({ status })
+      }
+
+      if (name) {
+        const nameFilter = (qb: any) => {
+          qb.where('name', 'like', `%${name}%`)
+        }
+        countQuery = countQuery.where(nameFilter)
+        dataQuery = dataQuery.where(nameFilter)
+      }
+
+      if (startDate) {
+        const startFilter = (qb: any) => {
+          qb.where('started_at', '>=', startDate)
+        }
+        countQuery = countQuery.where(startFilter)
+        dataQuery = dataQuery.where(startFilter)
+      }
+
+      if (endDate) {
+        const endFilter = (qb: any) => {
+          qb.where('started_at', '<=', endDate)
+        }
+        countQuery = countQuery.where(endFilter)
+        dataQuery = dataQuery.where(endFilter)
+      }
+
+      if (step) {
+        const stepFilter = (qb: any) => {
+          qb.whereIn('id', function(this: any) {
+            this.select('workflow_id')
+              .from('workflow_step')
+              .where('step', step)
+              .distinct()
+          })
+        }
+        countQuery = countQuery.where(stepFilter)
+        dataQuery = dataQuery.where(stepFilter)
       }
 
       if (identifier) {

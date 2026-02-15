@@ -25,4 +25,20 @@ export interface WorkflowStats {
 export interface Identifier {
   key: string;
   value: string;
+}
+
+export interface GetWorkflowsOptions {
+  status?: 'pending' | 'completed' | 'failed';
+  page?: number;
+  pageSize?: number;
+  orderBy?: 'started_at' | 'ended_at';
+  order?: 'asc' | 'desc';
+  identifier?: {
+    key: string;
+    value: string;
+  };
+  name?: string;
+  startDate?: string;
+  endDate?: string;
+  step?: string;
 } 

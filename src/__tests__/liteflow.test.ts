@@ -1,7 +1,7 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Liteflow } from '../index';
 import { join } from 'path';
 import { unlinkSync } from 'fs';
-import Database from 'better-sqlite3';
 
 describe('Liteflow', () => {
   let liteflow: Liteflow;
@@ -889,6 +889,108 @@ describe('Liteflow', () => {
       // Restart database
       liteflow = new Liteflow(dbPath);
       await liteflow.init();
+    });
+  });
+
+  describe('getWorkflows - extended filters', () => {
+    beforeEach(async () => {
+      // Create test workflows with different names and steps
+      const wf1 = liteflow.startWorkflow('user-registration', [
+        { key: 'userId', value: '100' }
+      ]);
+      liteflow.addStep(wf1, 'validate-email', { email: 'test@test.com' });
+      liteflow.addStep(wf1, 'send-welcome', { sent: true });
+      liteflow.completeWorkflow(wf1);
+
+      const wf2 = liteflow.startWorkflow('user-login', [
+        { key: 'userId', value: '200' }
+      ]);
+      liteflow.addStep(wf2, 'validate-credentials', { valid: true });
+
+      const wf3 = liteflow.startWorkflow('order-process', [
+        { key: 'orderId', value: '300' }
+      ]);
+      liteflow.addStep(wf3, 'validate-email', { email: 'order@test.com' });
+      liteflow.addStep(wf3, 'charge-payment', { amount: 100 });
+      liteflow.failWorkflow(wf3, 'Payment failed');
+
+      await liteflow.flushBatchInserts();
+    });
+
+    it('should filter by workflow name (partial match)', async () => {
+      const result = await liteflow.getWorkflows({ name: 'user' });
+      expect(result.workflows).toHaveLength(2);
+      expect(result.workflows.every(w => w.name.includes('user'))).toBe(true);
+      expect(result.total).toBe(2);
+    });
+
+    it('should filter by exact workflow name pattern', async () => {
+      const result = await liteflow.getWorkflows({ name: 'order-process' });
+      expect(result.workflows).toHaveLength(1);
+      expect(result.workflows[0].name).toBe('order-process');
+    });
+
+    it('should return empty for non-matching name', async () => {
+      const result = await liteflow.getWorkflows({ name: 'nonexistent' });
+      expect(result.workflows).toHaveLength(0);
+      expect(result.total).toBe(0);
+    });
+
+    it('should filter by step name', async () => {
+      const result = await liteflow.getWorkflows({ step: 'validate-email' });
+      expect(result.workflows).toHaveLength(2);
+      const names = result.workflows.map(w => w.name).sort();
+      expect(names).toContain('user-registration');
+      expect(names).toContain('order-process');
+    });
+
+    it('should return empty for non-matching step', async () => {
+      const result = await liteflow.getWorkflows({ step: 'nonexistent-step' });
+      expect(result.workflows).toHaveLength(0);
+    });
+
+    it('should filter by start date', async () => {
+      // All workflows created just now should be after yesterday
+      const yesterday = new Date(Date.now() - 86400000).toISOString();
+      const result = await liteflow.getWorkflows({ startDate: yesterday });
+      expect(result.workflows).toHaveLength(3);
+    });
+
+    it('should filter by end date', async () => {
+      // No workflows should be before yesterday
+      const yesterday = new Date(Date.now() - 86400000).toISOString();
+      const result = await liteflow.getWorkflows({ endDate: yesterday });
+      expect(result.workflows).toHaveLength(0);
+    });
+
+    it('should combine name and status filters', async () => {
+      const result = await liteflow.getWorkflows({ name: 'user', status: 'completed' });
+      expect(result.workflows).toHaveLength(1);
+      expect(result.workflows[0].name).toBe('user-registration');
+    });
+
+    it('should combine step and status filters', async () => {
+      const result = await liteflow.getWorkflows({ step: 'validate-email', status: 'failed' });
+      expect(result.workflows).toHaveLength(1);
+      expect(result.workflows[0].name).toBe('order-process');
+    });
+
+    it('should combine multiple filters (name + step + status)', async () => {
+      const result = await liteflow.getWorkflows({
+        name: 'user',
+        step: 'validate-email',
+        status: 'completed'
+      });
+      expect(result.workflows).toHaveLength(1);
+      expect(result.workflows[0].name).toBe('user-registration');
+    });
+
+    it('should return empty when combined filters match nothing', async () => {
+      const result = await liteflow.getWorkflows({
+        name: 'order',
+        status: 'completed'
+      });
+      expect(result.workflows).toHaveLength(0);
     });
   });
 

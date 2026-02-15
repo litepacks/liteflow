@@ -11,6 +11,7 @@ A lightweight workflow tracker for Node.js applications with multi-database supp
 - Identifier-based workflow lookup
 - Workflow statistics
 - **CLI tool for real-time statistics monitoring**
+- **Advanced filtering** (name, status, date range, step, identifier)
 - **Multi-database support** (SQLite, PostgreSQL, MySQL)
 - **Batch insert architecture** for high-performance writes
 - TypeScript support
@@ -163,6 +164,16 @@ const workflows = await liteflow.getWorkflows({
   order: 'desc'
 });
 
+// Advanced filtering
+const filtered = await liteflow.getWorkflows({
+  name: 'user-registration',       // Filter by name (partial match)
+  status: 'completed',             // Filter by status
+  startDate: '2026-01-01',         // Filter by start date
+  endDate: '2026-12-31',           // Filter by end date
+  step: 'validate-email',          // Filter by step name
+  identifier: { key: 'userId', value: '1001' } // Filter by identifier
+});
+
 // Delete a workflow
 const deleted = await workflow.delete(); // Using instance method
 // or
@@ -225,6 +236,18 @@ liteflow stats --db ./liteflow.db --status failed
 # Filter by identifier
 liteflow stats --db ./liteflow.db --key userId --value 1001
 
+# Filter by workflow name (partial match)
+liteflow stats --db ./liteflow.db --name user-registration
+
+# Filter by step name
+liteflow stats --db ./liteflow.db --step validate-email
+
+# Filter by date range
+liteflow stats --db ./liteflow.db --start-date 2026-01-01 --end-date 2026-12-31
+
+# Combine multiple filters
+liteflow stats --db ./liteflow.db --name user --status completed --step validate-email
+
 # Real-time monitoring (refreshes every 2 seconds)
 liteflow stats --db ./liteflow.db --watch
 
@@ -235,24 +258,85 @@ liteflow stats --db ./liteflow.db --watch --interval 5
 liteflow stats --db ./liteflow.db --status pending --watch --verbose
 ```
 
-#### CLI Options
+#### `list` - List Workflows
+
+List workflows with pagination, sorting and filtering:
+
+```bash
+# List all workflows
+liteflow list --db ./liteflow.db
+
+# List with pagination
+liteflow list --db ./liteflow.db --page 1 --page-size 20
+
+# List with sorting
+liteflow list --db ./liteflow.db --order-by started_at --order asc
+
+# List with filters
+liteflow list --db ./liteflow.db --status completed --name user
+```
+
+#### `watch` - Real-Time Monitoring
+
+Dedicated real-time monitoring command with change detection:
+
+```bash
+# Start monitoring
+liteflow watch --db ./liteflow.db
+
+# Monitor with custom interval
+liteflow watch --db ./liteflow.db --interval 5
+
+# Monitor with filters
+liteflow watch --db ./liteflow.db --status pending --name order
+```
+
+The watch command provides:
+- Real-time statistics with change indicators (+/- diffs)
+- New workflow detection alerts
+- Cycle counter for monitoring uptime
+- All filter options supported
+
+### CLI Options
+
+#### Common Options (all commands)
 
 - `-d, --db <path>` - Path to database file (default: `./liteflow.db`)
-- `-w, --watch` - Enable real-time monitoring (refresh every 2 seconds)
-- `-i, --interval <seconds>` - Refresh interval for watch mode in seconds (default: `2`)
 - `-s, --status <status>` - Filter by status (`pending`, `completed`, `failed`)
 - `-k, --key <key>` - Filter by identifier key
 - `-v, --value <value>` - Filter by identifier value
+- `-n, --name <pattern>` - Filter by workflow name (partial match)
+- `--start-date <date>` - Filter workflows started after this date (ISO 8601)
+- `--end-date <date>` - Filter workflows started before this date (ISO 8601)
+- `--step <step-name>` - Filter workflows containing this step
 - `--verbose` - Show detailed information including workflows and steps
 - `-h, --help` - Display help information
+
+#### Stats Options
+
+- `-w, --watch` - Enable real-time monitoring
+- `-i, --interval <seconds>` - Refresh interval for watch mode in seconds (default: `2`)
+
+#### List Options
+
+- `-p, --page <number>` - Page number (default: `1`)
+- `--page-size <number>` - Number of items per page (default: `20`)
+- `--order-by <field>` - Order by field: `started_at`, `ended_at` (default: `started_at`)
+- `--order <direction>` - Sort direction: `asc`, `desc` (default: `desc`)
+
+#### Watch Options
+
+- `-i, --interval <seconds>` - Refresh interval in seconds (default: `2`)
 
 ### CLI Output
 
 The CLI displays:
 
 1. **General Statistics**: Total workflows, completed, pending, failed counts, and average steps per workflow
-2. **Workflow List** (with `--verbose` or filters): Detailed list of workflows with status, start time, and duration
-3. **Most Frequent Steps**: Top 5 most frequently executed steps across all workflows
+2. **Change Indicators** (watch mode): Shows +/- diffs between refresh cycles
+3. **Active Filters**: Displays currently active filter parameters
+4. **Workflow List** (with `--verbose` or filters): Detailed list of workflows with status, start time, and duration
+5. **Most Frequent Steps**: Top 5 most frequently executed steps across all workflows
 
 ## API Reference
 
@@ -396,6 +480,31 @@ Options:
 - `orderBy?: 'started_at' | 'ended_at'` - Field to sort by (default: 'started_at')
 - `order?: 'asc' | 'desc'` - Sort order (default: 'desc')
 - `identifier?: { key: string, value: string }` - Filter by identifier key and value
+- `name?: string` - Filter by workflow name (partial match / LIKE)
+- `startDate?: string` - Filter workflows started after this date (ISO 8601)
+- `endDate?: string` - Filter workflows started before this date (ISO 8601)
+- `step?: string` - Filter workflows that contain this step name
+
+All filters are combined with AND logic when multiple are provided.
+
+**Example:**
+```typescript
+// Basic pagination
+const result = await liteflow.getWorkflows({ page: 1, pageSize: 10 });
+
+// Filter by status
+const completed = await liteflow.getWorkflows({ status: 'completed' });
+
+// Advanced filtering
+const filtered = await liteflow.getWorkflows({
+  name: 'user',
+  status: 'completed',
+  step: 'validate-email',
+  startDate: '2026-01-01',
+  endDate: '2026-12-31',
+  identifier: { key: 'userId', value: '1001' }
+});
+```
 
 ### `deleteWorkflow(workflowId: string): Promise<boolean>`
 
@@ -460,6 +569,10 @@ interface GetWorkflowsOptions {
     key: string;
     value: string;
   };
+  name?: string;
+  startDate?: string;
+  endDate?: string;
+  step?: string;
 }
 ```
 
@@ -538,8 +651,14 @@ npm install
 
 ### Testing
 
+Tests are powered by [Vitest](https://vitest.dev/).
+
 ```bash
+# Run tests once
 npm test
+
+# Run tests in watch mode
+npm run test:watch
 ```
 
 ### Benchmarking
